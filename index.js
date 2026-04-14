@@ -2,6 +2,7 @@ import { Buffer } from 'node:buffer';
 import { loadEnvFile } from 'node:process';
 import { StringDecoder } from 'node:string_decoder';
 import { createInterface } from 'node:readline';
+import { spawn } from 'node:child_process';
 
 try { loadEnvFile(); } catch {} // silently skip if no .env exists    
 
@@ -42,8 +43,35 @@ const tools= [
         }
         }
 ];
+function runPython(code, timeoutMs = 60_000) {
+    return new Promise((resolve) => {
+        const proc = spawn('ipython', ['--no-banner', '--no-confirm-exit', '-c', code], {
+            timeout: timeoutMs,
+        });
+        let stdout = '';
+        let stderr = '';
+        proc.stdout.on('data', (d) => { stdout += d; });
+        proc.stderr.on('data', (d) => { stderr += d; });
+        proc.on('close', (code) => {
+            const out = stdout.trim();
+            const err = stderr.trim();
+            if (code !== 0 && err) resolve(`Error:\n${err}`);
+            else resolve(out || '(no output)');
+        });
+        proc.on('error', (e) => resolve(`Failed to launch ipython: ${e.message}`));
+    });
+}
+
+async function dispatchTool(name, args) {
+    console.log(`\n[tool: ${name}] ${JSON.stringify(args)}`);
+    if (name === 'python') {
+        return runPython(args.code);
+    }
+    return `Tool "${name}" is not yet implemented.`;
+}
+
 async function makeCallToLLM( message ) {
-    messageHistory.push({ role: 'user', content: message });
+    if (message) messageHistory.push({ role: 'user', content: message });
 
     const body= JSON.stringify({ model: process.env.MODEL, messages: [{"role":"system","content":systemPrompt},...messageHistory], tools:tools, stream: true, cache_prompt:true });
     const res = await fetch(`${OLLAMA_CHAT_URL}`, {
@@ -54,7 +82,8 @@ async function makeCallToLLM( message ) {
 
     var buffer = "";
     const decoder = new StringDecoder('utf8');
-    let response= "";
+    let response = "";
+    const toolCalls = [];
     for await (const chunk of res.body) {
         buffer += decoder.write(chunk);
         const lines = buffer.split('\n');
@@ -64,28 +93,40 @@ async function makeCallToLLM( message ) {
             const data = line.startsWith('data: ') ? line.slice(6) : line;
             if (data === '[DONE]') break; // SSE end signal
             const payload = JSON.parse(data);
-            const token = payload.choices[0].delta.content ?? '';
-//            const reasoningToken = payload.choices[0].delta.reasoning_content ?? '';
-            if (token) {
-                 response += token;
-                 process.stdout.write(token); 
-            } else {
-                            console.log(JSON.stringify(payload.choices[0].delta))
-
-            }
+            const delta = payload.choices[0].delta;
+//            const reasoningToken = delta.reasoning_content ?? '';
 //            if (reasoningToken) process.stdout.write(reasoningToken);
-            if ( payload.choices[0].finish_reason ) {
-                if( payload.choices[0].finish_reason == "stop" ) {
-                    messageHistory.push({ role: 'assistant', content: response });
+
+            if (delta.tool_calls) {
+                for (const tc of delta.tool_calls) {
+                    if (!toolCalls[tc.index]) {
+                        toolCalls[tc.index] = { id: tc.id, type: tc.type, function: { name: tc.function.name, arguments: '' } };
+                    }
+                    toolCalls[tc.index].function.arguments += tc.function.arguments ?? '';
                 }
-                else if( payload.choices[0].finish_reason == "tool_calls" ) {
-                    console.log( response );
-                }
-                console.log( `>>${payload.choices[0].finish_reason}<<` )
+            }
+
+            const token = delta.content ?? '';
+            if (token) {
+                response += token;
+                process.stdout.write(token);
+            }
+
+            if (payload.choices[0].finish_reason) {
                 process.stdout.write('\n');
+                if (payload.choices[0].finish_reason === 'stop') {
+                    messageHistory.push({ role: 'assistant', content: response });
+                } else if (payload.choices[0].finish_reason === 'tool_calls') {
+                    messageHistory.push({ role: 'assistant', tool_calls: toolCalls });
+                    for (const tc of toolCalls) {
+                        const args = JSON.parse(tc.function.arguments);
+                        const result = await dispatchTool(tc.function.name, args);
+                        messageHistory.push({ role: 'tool', tool_call_id: tc.id, content: String(result) });
+                    }
+                    await makeCallToLLM(null); // follow up with tool results
+                }
             }
         }
-
     }
     return res;
 }
