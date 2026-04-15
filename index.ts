@@ -1,10 +1,48 @@
-import { Buffer } from 'node:buffer';
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import {
+  Tool,
+} from "@anthropic-ai/sdk/resources/messages/messages.mjs";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp";
+
 import { loadEnvFile } from 'node:process';
 import { StringDecoder } from 'node:string_decoder';
 import { createInterface } from 'node:readline';
 import { spawn } from 'node:child_process';
 
 try { loadEnvFile(); } catch {} // silently skip if no .env exists    
+
+  let mcp: Client = new Client({ name: "mcp-client-cli", version: "1.0.0" });
+  let transport: StreamableHTTPClientTransport | null = null;
+  let mcpTools: any[] = [];
+
+  async function connectToServer() {
+    try {
+        transport = new StreamableHTTPClientTransport(new URL("https://seolinkmap.com/mcp"));
+        await mcp.connect(transport);
+
+        const toolsResult = await mcp.listTools();
+        mcpTools = toolsResult.tools.map((tool) => {
+            return {
+                type: "function",
+                "function": {
+                    name: tool.name,
+                    description: tool.description,
+                    parameters: tool.inputSchema,
+                }
+            };
+        });
+        console.log(
+        "Connected to server with tools:",
+            mcpTools.map(( mcpTool ) => mcpTool.function.name)
+        );
+        tools= tools.concat(mcpTools);
+
+    } catch (e) {
+        console.log("Failed to connect to MCP server: ", e);
+        throw e;
+    }
+}  
+
 
 const OLLAMA_HEALTH_URL= new URL('/health', process.env.OLLAMA_URL);
 const OLLAMA_CHAT_URL= new URL('/v1/chat/completions', process.env.OLLAMA_URL);
@@ -24,7 +62,7 @@ Never invent tool results.
 If a required tool argument is missing, ask one concise follow-up question.
 Prefer a direct answer when no tool is needed.`;
 
-const tools= [
+let tools= [
         {
         "type":"function",
         "function":{
@@ -43,6 +81,7 @@ const tools= [
         }
         }
 ];
+
 function runPython(code:string, timeoutMs = 60_000) {
     return new Promise((resolve) => {
         const proc = spawn('ipython', ['--no-banner', '--no-confirm-exit', '-c', code], {
@@ -66,6 +105,12 @@ async function dispatchTool(name:string, args:any) {
     console.log(`\n[tool: ${name}] ${JSON.stringify(args)}`);
     if (name === 'python') {
         return runPython(args.code);
+    } else {
+        const result= await mcp.callTool({
+            name: name,
+            arguments: args,
+        });
+        return JSON.stringify(result.content);
     }
     return `Tool "${name}" is not yet implemented.`;
 }
@@ -139,6 +184,9 @@ if(!ollamaOk) {
 } else {
     console.info(`Ollama Located and Healthy -  ${OLLAMA_HEALTH_URL}`)
 }
+
+await connectToServer();
+
 let messageHistory: any[] = [];
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
