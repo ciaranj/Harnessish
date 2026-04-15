@@ -43,7 +43,7 @@ const tools= [
         }
         }
 ];
-function runPython(code, timeoutMs = 60_000) {
+function runPython(code:string, timeoutMs = 60_000) {
     return new Promise((resolve) => {
         const proc = spawn('ipython', ['--no-banner', '--no-confirm-exit', '-c', code], {
             timeout: timeoutMs,
@@ -62,7 +62,7 @@ function runPython(code, timeoutMs = 60_000) {
     });
 }
 
-async function dispatchTool(name, args) {
+async function dispatchTool(name:string, args:any) {
     console.log(`\n[tool: ${name}] ${JSON.stringify(args)}`);
     if (name === 'python') {
         return runPython(args.code);
@@ -70,7 +70,7 @@ async function dispatchTool(name, args) {
     return `Tool "${name}" is not yet implemented.`;
 }
 
-async function makeCallToLLM( message ) {
+async function makeCallToLLM( message:string|undefined=undefined ) {
     if (message) messageHistory.push({ role: 'user', content: message });
 
     const body= JSON.stringify({ model: process.env.MODEL, messages: [{"role":"system","content":systemPrompt},...messageHistory], tools:tools, stream: true, cache_prompt:true });
@@ -80,50 +80,53 @@ async function makeCallToLLM( message ) {
         body: body,
     });
 
-    var buffer = "";
+    let buffer:string|undefined = "";
     const decoder = new StringDecoder('utf8');
     let response = "";
     const toolCalls = [];
+    if (!res.body) throw new Error("Response body is null");
     for await (const chunk of res.body) {
         buffer += decoder.write(chunk);
-        const lines = buffer.split('\n');
-        buffer = lines.pop(); // keep any incomplete trailing line
-        for (const line of lines) {
-            if (!line.trim()) continue; // skip empty lines
-            const data = line.startsWith('data: ') ? line.slice(6) : line;
-            if (data === '[DONE]') break; // SSE end signal
-            const payload = JSON.parse(data);
-            const delta = payload.choices[0].delta;
-//            const reasoningToken = delta.reasoning_content ?? '';
-//            if (reasoningToken) process.stdout.write(reasoningToken);
+        const lines:string[]|undefined = buffer?.split('\n');
+        if( lines != null ) {
+            buffer = lines.pop(); // keep any incomplete trailing line
+            for (const line of lines) {
+                if (!line.trim()) continue; // skip empty lines
+                const data = line.startsWith('data: ') ? line.slice(6) : line;
+                if (data === '[DONE]') break; // SSE end signal
+                const payload = JSON.parse(data);
+                const delta = payload.choices[0].delta;
+    //            const reasoningToken = delta.reasoning_content ?? '';
+    //            if (reasoningToken) process.stdout.write(reasoningToken);
 
-            if (delta.tool_calls) {
-                for (const tc of delta.tool_calls) {
-                    if (!toolCalls[tc.index]) {
-                        toolCalls[tc.index] = { id: tc.id, type: tc.type, function: { name: tc.function.name, arguments: '' } };
+                if (delta.tool_calls) {
+                    for (const tc of delta.tool_calls) {
+                        if (!toolCalls[tc.index]) {
+                            toolCalls[tc.index] = { id: tc.id, type: tc.type, function: { name: tc.function.name, arguments: '' } };
+                        }
+                        toolCalls[tc.index].function.arguments += tc.function.arguments ?? '';
                     }
-                    toolCalls[tc.index].function.arguments += tc.function.arguments ?? '';
                 }
-            }
 
-            const token = delta.content ?? '';
-            if (token) {
-                response += token;
-                process.stdout.write(token);
-            }
+                const token = delta.content ?? '';
+                if (token) {
+                    response += token;
+                    process.stdout.write(token);
+                }
 
-            if (payload.choices[0].finish_reason) {
-                process.stdout.write('\n');
-                if (payload.choices[0].finish_reason === 'stop') {
-                    messageHistory.push({ role: 'assistant', content: response });
-                } else if (payload.choices[0].finish_reason === 'tool_calls') {
-                    messageHistory.push({ role: 'assistant', tool_calls: toolCalls });
-                    for (const tc of toolCalls) {
-                        const args = JSON.parse(tc.function.arguments);
-                        const result = await dispatchTool(tc.function.name, args);
-                        messageHistory.push({ role: 'tool', tool_call_id: tc.id, content: String(result) });
+                if (payload.choices[0].finish_reason) {
+                    process.stdout.write('\n');
+                    if (payload.choices[0].finish_reason === 'stop') {
+                        messageHistory.push({ role: 'assistant', content: response });
+                    } else if (payload.choices[0].finish_reason === 'tool_calls') {
+                        messageHistory.push({ role: 'assistant', tool_calls: toolCalls });
+                        for (const tc of toolCalls) {
+                            const args = JSON.parse(tc.function.arguments);
+                            const result = await dispatchTool(tc.function.name, args);
+                            messageHistory.push({ role: 'tool', tool_call_id: tc.id, content: String(result) });
+                        }
+                        await makeCallToLLM(); // follow up with tool results
                     }
-                    await makeCallToLLM(null); // follow up with tool results
                 }
             }
         }
@@ -136,7 +139,7 @@ if(!ollamaOk) {
 } else {
     console.info(`Ollama Located and Healthy -  ${OLLAMA_HEALTH_URL}`)
 }
-let messageHistory = [];
+let messageHistory: any[] = [];
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 rl.setPrompt('> ');
