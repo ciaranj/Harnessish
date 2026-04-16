@@ -7,7 +7,8 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { loadEnvFile } from 'node:process';
 import { StringDecoder } from 'node:string_decoder';
 import { createInterface } from 'node:readline';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, readdir, appendFile } from 'node:fs/promises';
+import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -50,6 +51,7 @@ try { loadEnvFile(); } catch {} // silently skip if no .env exists
 
 const OLLAMA_HEALTH_URL= new URL('/health', process.env.OLLAMA_URL);
 const OLLAMA_CHAT_URL= new URL('/v1/chat/completions', process.env.OLLAMA_URL);
+const SEARXNG_URL = process.env.SEARXNG_URL;
 
 async function healthCheck() {
     try {
@@ -82,6 +84,77 @@ let tools= [
                             "description":"The path to the file that needs reading"
                         }
                     }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "write_to_file",
+                "description": "Creates a new file or overwrites an existing file with the provided content.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "The path to the file to write."
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The full content to write into the file."
+                        }
+                    },
+                    "required": ["path", "content"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "append_to_file",
+                "description": "Appends content to the end of an existing file.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "The path to the file to append to."
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The content to append."
+                        }
+                    },
+                    "required": ["path", "content"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "replace_lines",
+                "description": "Replaces a range of lines in a file with new content. Line numbers are 1-indexed.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "The path to the file to edit."
+                        },
+                        "start_line": {
+                            "type": "integer",
+                            "description": "The first line number to replace."
+                        },
+                        "end_line": {
+                            "type": "integer",
+                            "description": "The last line number to replace."
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The new content to insert."
+                        }
+                    },
+                    "required": ["path", "start_line", "end_line", "content"]
                 }
             }
         },
@@ -121,6 +194,96 @@ let tools= [
             "required":["code"]
             }
         }
+        }
+        ,
+        {
+            "type": "function",
+            "function": {
+                "name": "search_web",
+                "description": "Search the web using SearXNG to get up-to-date information.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "fetch_url",
+                "description": "Fetches the content of a URL and returns it as text.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "The URL to fetch."
+                        }
+                    },
+                    "required": ["url"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "list_directory",
+                "description": "Lists the files and directories in a given path.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "The directory path to list."
+                        }
+                    },
+                    "required": ["path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_file_tree",
+                "description": "Returns a recursive directory tree structure of a path.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "The root path to generate the tree from."
+                        }
+                    },
+                    "required": ["path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "search_code",
+                "description": "Search for a pattern in the codebase using grep. Returns line numbers and file paths.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "pattern": {
+                            "type": "string",
+                            "description": "The regex pattern or string to search for."
+                        },
+                        "path": {
+                            "type": "string",
+                            "description": "The directory or file to search in (defaults to current directory)."
+                        }
+                    },
+                    "required": ["pattern"]
+                }
+            }
         }
 ];
 /**
@@ -186,6 +349,139 @@ async function readLocalFile(path: string): Promise<string> {
     }
 }
 
+/**
+ * Writes content to a file.
+ */
+async function writeLocalFile(path: string, content: string): Promise<string> {
+    try {
+        await writeFile(path, content, 'utf-8');
+        return `Successfully wrote to ${path}`;
+    } catch (error: any) {
+        return `Error writing to file at "${path}": ${error.message}`;
+    }
+}
+
+/**
+ * Replaces a range of lines in a file. Line numbers are 1-indexed.
+ */
+async function replaceLinesLocal(path: string, startLine: number, endLine: number, content: string): Promise<string> {
+    try {
+        const fileContent = await readFile(path, 'utf-8');
+        const lines = fileContent.split(/\\r?\\n/);
+
+        if (startLine < 1 || endLine > lines.length || startLine > endLine) {
+            return `Error: Invalid line range. Lines are 1-indexed. Range: ${startLine}-${endLine}, Total lines: ${lines.length}`;
+        }
+
+        const contentLines = content.split(/\\r?\\n/);
+        const replacedLines = [
+            ...lines.slice(0, startLine - 1),
+            ...contentLines,
+            ...lines.slice(endLine)
+        ];
+
+        await writeFile(path, replacedLines.join('\\n'), 'utf-8');
+        return `Successfully replaced lines ${startLine}-${endLine} in ${path}`;
+    } catch (error: any) {
+        return `Error replacing lines in file at "${path}": ${error.message}`;
+    }
+}
+
+/**
+ * Fetches the content of a URL and returns it as text.
+ */
+async function fetchUrl(url: string): Promise<string> {
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            return `Error: Failed to fetch URL "${url}" with status ${response.status}`;
+        }
+        const text = await response.text();
+        // Limit the output to avoid blowing up the context window
+        if (text.length > 10000) {
+            return text.substring(0, 10000) + "\n... (truncated)";
+        }
+        return text;
+    } catch (error: any) {
+        return `Error fetching URL "${url}": ${error.message}`;
+    }
+}
+
+async function searchWeb(query: string): Promise<string> {
+    try {
+        const url = new URL(`${SEARXNG_URL}/search`);
+        url.searchParams.append('q', query);
+        url.searchParams.append('format', 'json');
+
+        const response = await fetch(url.toString());
+        if (!response.ok) {
+            return `Error: SearXNG search failed with status ${response.status}`;
+        }
+
+        const data = await response.json();
+        
+        if (!data.results || data.results.length === 0) {
+            return "No results found.";
+        }
+
+        // Limit to the top 5 results for brevity in context
+        return data.results.slice(0, 5).map((result: any) => {
+            return `Title: ${result.title}\\nURL: ${result.url}\\nContent: ${result.content}\\n`;
+        }).join('\\n---\\n');
+
+    } catch (error: any) {
+        return `Error during web search: ${error.message}`;
+    }
+}
+
+async function searchCode(pattern: string, path: string = '.'): Promise<string> {
+    try {
+        // Using grep -rnE:
+        // -r: recursive
+        // -n: line number
+        // -E: extended regex
+        const command = `grep -rnE "${pattern}" ${path}`;
+        const { stdout, stderr } = await execAsync(command);
+
+        if (!stdout.trim()) {
+            return `No matches found for "${pattern}" in "${path}".`;
+        }
+
+        // Limit the output to avoid blowing up the context window
+        const lines = stdout.trim().split('\\n');
+        if (lines.length > 50) {
+            return `Found ${lines.length} matches. Showing first 50:\\n${lines.slice(0, 50).join('\\n')}\\n... (truncated)`;
+        }
+
+        return stdout.trim();
+    } catch (error: any) {
+        // grep returns exit code 1 if no matches are found
+        if (error.status === 1 || error.message.includes('not found')) {
+            return `No matches found for "${pattern}" in "${path}".`;
+        }
+        return `Error searching code: ${error.message}`;
+    }
+}
+
+/**
+ * Lists the contents of a directory.
+ */
+async function listDirectory(path: string): Promise<string> {
+    try {
+        const files = await readdir(path, { withFileTypes: true });
+        if (files.length === 0) {
+            return `Directory "${path}" is empty.`;
+        }
+        return files.map(file => {
+            const type = file.isDirectory() ? '[DIR]' : '[FILE]';
+            return `${type} ${file.name}`;
+        }).join('\\n');
+    } catch (error: any) {
+        return `Error listing directory at "${path}": ${error.message}`;
+    }
+}
+
+
 async function dispatchTool(name:string, args:any) {
     console.log(`\n[tool: ${name}] ${JSON.stringify(args)}`);
     if (name === 'python') {
@@ -196,7 +492,25 @@ async function dispatchTool(name:string, args:any) {
     }
     else if (name === 'get_git_diff') {
         return await getGitDiff(args.path, args.staged);
-    } 
+    }
+    else if (name === 'write_to_file') {
+        return await writeLocalFile(args.path, args.content);
+    }
+    else if (name === 'replace_lines') {
+        return await replaceLinesLocal(args.path, args.start_line, args.end_line, args.content);
+    }
+    else if (name === 'search_web') {
+        return await searchWeb(args.query);
+    }     
+    else if (name === 'fetch_url') {
+        return await fetchUrl(args.url);
+    }
+    else if (name === 'search_code') {
+        return await searchCode(args.pattern, args.path);
+    }
+    else if (name === 'list_directory') {
+        return await listDirectory(args.path);
+    }
     else {
         const result= await mcp.callTool({
             name: name,
@@ -208,7 +522,7 @@ async function dispatchTool(name:string, args:any) {
 }
 
 async function makeCallToLLM( message:string|undefined=undefined, depth:number=0 ) {
-    if( depth > 5 ) throw new Error("Too many loops"); // Naff loop detection logic to catch tool spinouts.
+    if( depth > 20 ) throw new Error("Too many loops"); // Naff loop detection logic to catch tool spinouts.
     if (message) messageHistory.push({ role: 'user', content: message });
 
     const body= JSON.stringify({ model: process.env.MODEL, messages: [{"role":"system","content":systemPrompt},...messageHistory], tools:tools, stream: true, cache_prompt:true });
@@ -313,4 +627,3 @@ rl.on('line', async (line) => {
     rl.resume();
     rl.prompt();
 });
-
