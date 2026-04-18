@@ -10,7 +10,8 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "types": ["node"],
+    "jsx": "react-jsx"
   },
-  "include": ["index.ts"],
+  "include": ["index.tsx"],
   "exclude": ["node_modules"]
 }
