@@ -597,7 +597,7 @@ if(!ollamaOk) {
     console.info(`Ollama Located and Healthy -  ${OLLAMA_HEALTH_URL}`)
 }
 
-await connectToServer();
+//await connectToServer();
 
 let messageHistory: any[] = [];
 
