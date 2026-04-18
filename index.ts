@@ -472,6 +472,44 @@ async function replaceContentLocal(path: string, searchString: string, replaceme
     }
 }
 
+/**
+ * Appends content to a file.
+ */
+async function appendLocalFile(path: string, content: string): Promise<string> {
+    try {
+        await appendFile(path, content, 'utf-8');
+        return `Successfully appended to ${path}`;
+    } catch (error: any) {
+        return `Error appending to file at "${path}": ${error.message}`;
+    }
+}
+
+/**
+ * Returns a recursive directory tree structure of a path.
+ */
+async function getFileTree(dirPath: string): Promise<string> {
+    try {
+        async function buildTree(currentPath: string, indent: string = ""): Promise<string> {
+            const entries = await readdir(currentPath, { withFileTypes: true });
+            let tree = "";
+            for (const entry of entries) {
+                const fullPath = path.join(currentPath, entry.name);
+                if (entry.isDirectory()) {
+                    tree += `${indent}[DIR] ${entry.name}\n`;
+                    tree += await buildTree(fullPath, indent + "  ");
+                } else {
+                    tree += `${indent}[FILE] ${entry.name}\n`;
+                }
+            }
+            return tree;
+        }
+        const result = await buildTree(dirPath);
+        return result || `Directory "${dirPath}" is empty.`;
+    } catch (error: any) {
+        return `Error getting file tree for "${dirPath}": ${error.message}`;
+    }
+}
+
 async function dispatchTool(name:string, args:any) {
     console.log(`\n[tool: ${name}] ${JSON.stringify(args)}`);
     if (name === 'python') {
@@ -489,6 +527,12 @@ async function dispatchTool(name:string, args:any) {
     else if (name === 'replace_content') {
         return await replaceContentLocal(args.path, args.search_string, args.replacement_string);
     }    
+    else if (name === 'append_to_file') {
+        return await appendLocalFile(args.path, args.content);
+    }
+    else if (name === 'get_file_tree') {
+        return await getFileTree(args.path);
+    }
     else if (name === 'search_web') {
         return await searchWeb(args.query);
     }     
