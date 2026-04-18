@@ -132,8 +132,8 @@ let tools= [
         {
             "type": "function",
             "function": {
-                "name": "replace_lines",
-                "description": "Replaces a range of lines in a file with new content. Line numbers are 1-indexed.",
+                "name": "replace_content",
+                "description": "Replaces a specific block of text in a file with new content. This is more reliable than using line numbers.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -141,20 +141,16 @@ let tools= [
                             "type": "string",
                             "description": "The path to the file to edit."
                         },
-                        "start_line": {
-                            "type": "integer",
-                            "description": "The first line number to replace."
-                        },
-                        "end_line": {
-                            "type": "integer",
-                            "description": "The last line number to replace."
-                        },
-                        "content": {
+                        "search_string": {
                             "type": "string",
-                            "description": "The new content to insert."
+                            "description": "The exact code snippet/block to find and replace."
+                        },
+                        "replacement_string": {
+                            "type": "string",
+                            "description": "The new code snippet/block to insert."
                         }
                     },
-                    "required": ["path", "start_line", "end_line", "content"]
+                    "required": ["path", "search_string", "replacement_string"]
                 }
             }
         },
@@ -362,32 +358,6 @@ async function writeLocalFile(path: string, content: string): Promise<string> {
 }
 
 /**
- * Replaces a range of lines in a file. Line numbers are 1-indexed.
- */
-async function replaceLinesLocal(path: string, startLine: number, endLine: number, content: string): Promise<string> {
-    try {
-        const fileContent = await readFile(path, 'utf-8');
-        const lines = fileContent.split(/\\r?\\n/);
-
-        if (startLine < 1 || endLine > lines.length || startLine > endLine) {
-            return `Error: Invalid line range. Lines are 1-indexed. Range: ${startLine}-${endLine}, Total lines: ${lines.length}`;
-        }
-
-        const contentLines = content.split(/\\r?\\n/);
-        const replacedLines = [
-            ...lines.slice(0, startLine - 1),
-            ...contentLines,
-            ...lines.slice(endLine)
-        ];
-
-        await writeFile(path, replacedLines.join('\\n'), 'utf-8');
-        return `Successfully replaced lines ${startLine}-${endLine} in ${path}`;
-    } catch (error: any) {
-        return `Error replacing lines in file at "${path}": ${error.message}`;
-    }
-}
-
-/**
  * Fetches the content of a URL and returns it as text.
  */
 async function fetchUrl(url: string): Promise<string> {
@@ -481,6 +451,26 @@ async function listDirectory(path: string): Promise<string> {
     }
 }
 
+/**
+ * Replaces a specific string/block of text in a file.
+ */
+async function replaceContentLocal(path: string, searchString: string, replacementString: string): Promise<string> {
+    try {
+        const fileContent = await readFile(path, 'utf-8');
+        
+        if (!fileContent.includes(searchString)) {
+            return `Error: Could not find the exact search string in "${path}". \n\nTip: Ensure you include enough context and that whitespace matches exactly. The snippet you provided was:\n\`\`\`\n${searchString}\n\`\`\``;
+        }
+
+        // Replace only the first occurrence to prevent accidental mass-replacements
+        const newContent = fileContent.replace(searchString, replacementString);
+        
+        await writeFile(path, newContent, 'utf-8');
+        return `Successfully replaced the content block in ${path}`;
+    } catch (error: any) {
+        return `Error replacing content in file at "${path}": ${error.message}`;
+    }
+}
 
 async function dispatchTool(name:string, args:any) {
     console.log(`\n[tool: ${name}] ${JSON.stringify(args)}`);
@@ -496,9 +486,9 @@ async function dispatchTool(name:string, args:any) {
     else if (name === 'write_to_file') {
         return await writeLocalFile(args.path, args.content);
     }
-    else if (name === 'replace_lines') {
-        return await replaceLinesLocal(args.path, args.start_line, args.end_line, args.content);
-    }
+    else if (name === 'replace_content') {
+        return await replaceContentLocal(args.path, args.search_string, args.replacement_string);
+    }    
     else if (name === 'search_web') {
         return await searchWeb(args.query);
     }     
