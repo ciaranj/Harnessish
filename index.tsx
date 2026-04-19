@@ -6,12 +6,13 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 
 import { loadEnvFile } from 'node:process';
 import { StringDecoder } from 'node:string_decoder';
-import { readFile, writeFile, readdir, appendFile } from 'node:fs/promises';
+import { readFile, writeFile, readdir, appendFile} from 'node:fs/promises';
+import  fs  from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
-
+import { toolsDefinition } from './tools.js';
 const execAsync = promisify(exec);
 try { loadEnvFile(); } catch {}
 
@@ -40,218 +41,7 @@ Prefer a direct answer when no tool is needed.
 
 Avoid sycophancy at all costs`;
 
-const toolsDefinition: any[] = [
-        {
-            "type":"function",
-            "function":{
-                "name":"read_from_file",
-                "description":"Read the contents of a file and return it to the context",
-                "parameters": {
-                    "type":"object",
-                    "properties": {
-                        "path": {
-                            "type":"string",
-                            "description":"The path to the file that needs reading"
-                        }
-                    }
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "write_to_file",
-                "description": "Creates a new file or overwrites an existing file with the provided content.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path": {
-                            "type": "string",
-                            "description": "The path to the file to write."
-                        },
-                        "content": {
-                            "type": "string",
-                            "description": "The full content to write into the file."
-                        }
-                    },
-                    "required": ["path", "content"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "append_to_file",
-                "description": "Appends content to the end of an existing file.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path": {
-                            "type": "string",
-                            "description": "The path to the file to append to."
-                        },
-                        "content": {
-                            "type": "string",
-                            "description": "The content to append."
-                        }
-                    },
-                    "required": ["path", "content"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "replace_content",
-                "description": "Replaces a specific block of text in a file with new content. This is more reliable than using line numbers.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path": {
-                            "type": "string",
-                            "description": "The path to the file to edit."
-                        },
-                        "search_string": {
-                            "type": "string",
-                            "description": "The exact code snippet/block to find and replace."
-                        },
-                        "replacement_string": {
-                            "type": "string",
-                            "description": "The new code snippet/block to insert."
-                        }
-                    },
-                    "required": ["path", "search_string", "replacement_string"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_git_diff",
-                "description": "Returns the differences between the current working directory and the last commit. Use this to see exactly what code has changed to write accurate commit messages.",
-                "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                    "type": "string",
-                    "description": "The specific file to check the diff for. If omitted, returns diffs for all changed files."
-                    },
-                    "staged": {
-                    "type": "boolean",
-                    "description": "If true, returns the diff of files already added to the git index (staged). If false, returns unstaged changes."
-                    }
-                }
-                }
-            }
-        },
-        {
-        "type":"function",
-        "function":{
-            "name":"python",
-            "description":"Runs code in an ipython interpreter and returns the result of the execution after 60 seconds.",
-            "parameters":{
-            "type":"object",
-            "properties":{
-                "code":{
-                "type":"string",
-                "description":"The code to run in the ipython interpreter."
-                }
-            },
-            "required":["code"]
-            }
-        }
-        }
-        ,
-        {
-            "type": "function",
-            "function": {
-                "name": "search_web",
-                "description": "Search the web using SearXNG to get up-to-date information.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "The search query"
-                        }
-                    },
-                    "required": ["query"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "fetch_url",
-                "description": "Fetches the content of a URL and returns it as text.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "url": {
-                            "type": "string",
-                            "description": "The URL to fetch."
-                        }
-                    },
-                    "required": ["url"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "list_directory",
-                "description": "Lists the files and directories in a given path.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path": {
-                            "type": "string",
-                            "description": "The directory path to list."
-                        }
-                    },
-                    "required": ["path"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_file_tree",
-                "description": "Returns a recursive directory tree structure of a path.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path": {
-                            "type": "string",
-                            "description": "The root path to generate the tree from."
-                        }
-                    },
-                    "required": ["path"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "search_code",
-                "description": "Search for a pattern in the codebase using grep. Returns line numbers and file paths.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "pattern": {
-                            "type": "string",
-                            "description": "The regex pattern or string to search for."
-                        },
-                        "path": {
-                            "type": "string",
-                            "description": "The directory or file to search in (defaults to current directory)."
-                        }
-                    },
-                    "required": ["pattern"]
-                }
-            }
-        }
-];
+
 
 // --- Tool Implementations ---
 
@@ -357,6 +147,70 @@ async function getFileTree(dirPath: string): Promise<string> {
     } catch (error: any) { return `Error: ${error.message}`; }
 }
 
+async function grepFile(filePath: string, pattern: string): Promise<string> {
+    try {
+        const { stdout } = await execAsync(`grep -nE "${pattern}" "${filePath}"`);
+        if (!stdout.trim()) return `No matches found for "${pattern}" in "${filePath}".`;
+        return stdout.trim();
+    } catch (error: any) {
+        return error.stdout || `Error: ${error.message}`;
+    }
+}
+
+/**
+  * Finds files by name or pattern within a directory.
+  *
+  * @param {string} pattern - The filename or pattern to search for (e.g., 'utils.ts' or '*.test.ts').
+  * @param {string} [startPath='.'] - The directory to start the search from.
+  * @returns {Promise<string[]>} - A list of matching file paths.
+  */
+ async function findFile(pattern:string, startPath:string = '.' ) {
+    console.log("Called with: " + pattern + " path :" + startPath );
+     const results:string[] = [];
+
+     // Helper to convert glob patterns (*, ?) to Regular Expressions
+     const globToRegex = (glob:string) => {
+         // Escape special regex characters except for * and ?
+         let regexStr = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+         // Convert glob '*' to regex '.*'
+         regexStr = regexStr.replace(/\*/g, '.*');
+         // Convert glob '?' to regex '.'
+         regexStr = regexStr.replace(/\?/g, '.');
+         // Match the whole string
+         return new RegExp(`^${regexStr}$`);
+     };
+
+     const patternRegex = globToRegex(pattern);
+
+     async function walk(currentDir:string) {
+         try {
+             const entries = await readdir(currentDir, { withFileTypes: true });
+             for (const entry of entries) {
+                 const fullPath = path.join(currentDir, entry.name);
+
+                 if (entry.isDirectory()) {
+                     // Recursively search subdirectories
+                     await walk(fullPath);
+                 } else if (entry.isFile()) {
+                     // Check if the filename matches the pattern
+                     if (patternRegex.test(entry.name)) {
+                         results.push(fullPath);
+                     }
+                 }
+             }
+         } catch (error:any) {
+             // Handle errors like permission denied or directory not found
+             console.error(`Error reading directory ${currentDir}: ${error.message}`);
+         }
+     }
+
+     // Resolve the absolute path to ensure consistency
+     const absoluteStartPath = path.resolve(startPath);
+     await walk(absoluteStartPath);
+
+     return results;
+ }
+
 // --- MCP Client ---
 
 let mcpClient = new Client({ name: "mcp-client-cli", version: "1.0.0" });
@@ -378,6 +232,8 @@ async function dispatchTool(name: string, args: any) {
     if (name === 'replace_content') return await replaceContentLocal(args.path, args.search_string, args.replacement_string);
     if (name === 'append_to_file') return await appendLocalFile(args.path, args.content);
     if (name === 'get_file_tree') return await getFileTree(args.path);
+    if (name === 'grep_file') return await grepFile(args.path, args.pattern);
+    if (name === 'find_file') return await findFile(args.pattern, args.path);
     if (name === 'search_web') return await searchWeb(args.query);
     if (name === 'fetch_url') return await fetchUrl(args.url);
     if (name === 'search_code') return await searchCode(args.pattern, args.path);
