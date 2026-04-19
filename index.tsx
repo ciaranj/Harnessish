@@ -403,7 +403,10 @@ async function makeCallToLLM(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             model: process.env.MODEL,
-            messages: [{ role: 'system', content: systemPrompt }, ...messagesRef.current],
+            messages: [
+                { role: 'system', content: systemPrompt },
+                ...messagesRef.current.filter((message) => (typeof message.reasoning !== undefined) )
+            ],
             tools,
             stream: true,
             cache_prompt: true
