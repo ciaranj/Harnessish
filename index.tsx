@@ -4,7 +4,6 @@ import TextInput from 'ink-text-input';
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp";
 
-import { loadEnvFile } from 'node:process';
 import { StringDecoder } from 'node:string_decoder';
 import { readFile, writeFile, readdir, appendFile} from 'node:fs/promises';
 import  fs  from 'node:fs';
@@ -13,25 +12,11 @@ import { spawn } from 'node:child_process';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { toolsDefinition } from './tools.js';
+import { Message, Stats } from './types.js';
+import { OLLAMA_HEALTH_URL, OLLAMA_CHAT_URL, SEARXNG_URL, systemPrompt } from './constants.js';
+
 const execAsync = promisify(exec);
-try { loadEnvFile(); } catch {}
-
-// --- Types ---
-
-type Message = {
-    role: 'user' | 'assistant' | 'tool' | 'system';
-    content: string;
-    reasoning?: string;
-    tool_calls?: any[];
-    tool_call_id?: string;
-};
-
-type Stats = {
-    tokens: number;
-    tps: number;
-    status: 'idle' | 'thinking' | 'generating' | 'tool_calling' | 'tool_running';
-    contextSize: number;
-};
+// loadEnvFile is now in constants.ts
 
 function estimateTokens(messages: Message[]): number {
     let total = 0;
@@ -41,24 +26,6 @@ function estimateTokens(messages: Message[]): number {
     }
     return Math.round(total);
 }
-
-
-
-// --- Constants ---
-
-const OLLAMA_HEALTH_URL = new URL('/health', process.env.OLLAMA_URL!);
-const OLLAMA_CHAT_URL = new URL('/v1/chat/completions', process.env.OLLAMA_URL!);
-const SEARXNG_URL = process.env.SEARXNG_URL;
-
-const systemPrompt = `You may use the available tools when they are needed to answer accurately.
-Use a tool when the question requires live data, account-specific data, or an external action.
-Do not call tools for general knowledge or simple reasoning.
-Never invent tool results.
-If a required tool argument is missing, ask one concise follow-up question.
-Prefer a direct answer when no tool is needed.
-
-Avoid sycophancy at all costs`;
-
 
 
 // --- Tool Implementations ---
