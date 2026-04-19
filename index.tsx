@@ -26,6 +26,24 @@ type Message = {
     tool_call_id?: string;
 };
 
+type Stats = {
+    tokens: number;
+    tps: number;
+    status: 'idle' | 'thinking' | 'generating' | 'tool_calling' | 'tool_running';
+    contextSize: number;
+};
+
+function estimateTokens(messages: Message[]): number {
+    let total = 0;
+    for (const m of messages) {
+        total += m.content.length / 4;
+        if (m.reasoning) total += m.reasoning.length / 4;
+    }
+    return Math.round(total);
+}
+
+
+
 // --- Constants ---
 
 const OLLAMA_HEALTH_URL = new URL('/health', process.env.OLLAMA_URL!);
@@ -265,10 +283,15 @@ async function makeCallToLLM(
     updateMessages: (updateFn: (msgs: Message[]) => Message[]) => void,
     messagesRef: React.MutableRefObject<Message[]>,
     tools: any[],
+    setStats: React.Dispatch<React.SetStateAction<Stats>>,
     depth: number = 0
 ) {
     if (depth > 100) throw new Error("Too many loops");
     if (message) updateMessages(msgs => [...msgs, { role: 'user', content: message }]);
+    
+    setStats({ tokens: 0, tps: 0, status: 'thinking', contextSize: 0 });
+    const startTime = Date.now();
+    let tokenCount = 0;
 
     const res = await fetch(`${OLLAMA_CHAT_URL}`, {
         method: 'POST',
@@ -284,6 +307,7 @@ async function makeCallToLLM(
             cache_prompt: true
         }),
     });
+    const contextSize = estimateTokens([{ role: 'system', content: systemPrompt }, ...messagesRef.current]);
 
     if (res.status !== 200) throw new Error(`LLM error: ${res.status}`);
 
@@ -306,7 +330,12 @@ async function makeCallToLLM(
             const payload = JSON.parse(data);
             const delta = payload.choices[0].delta;
 
+            tokenCount++;
+            const elapsedSeconds = (Date.now() - startTime) / 1000;
+            const tps = elapsedSeconds > 0 ? tokenCount / elapsedSeconds : 0;
+
             if (delta.reasoning_content) {
+                setStats(prev => ({ ...prev, tokens: tokenCount, tps:0, status: 'thinking', contextSize }));
                 const token = delta.reasoning_content;
                 updateMessages(msgs => {
                     const last = msgs[msgs.length - 1];
@@ -316,6 +345,7 @@ async function makeCallToLLM(
             }
 
             if (delta.tool_calls) {
+                setStats(prev => ({ ...prev, tokens: tokenCount, tps, status: 'tool_calling', contextSize }));
                 for (const tc of delta.tool_calls) {
                     if (!toolCalls[tc.index]) toolCalls[tc.index] = { id: tc.id, type: tc.type, function: { name: tc.function.name, arguments: '' } };
                     toolCalls[tc.index].function.arguments += tc.function.arguments ?? '';
@@ -323,6 +353,7 @@ async function makeCallToLLM(
             }
 
             if (delta.content) {
+                setStats(prev => ({ ...prev, tokens: tokenCount, tps, status: 'generating', contextSize }));
                 const token = delta.content;
                 response += token;
                 updateMessages(msgs => {
@@ -337,17 +368,21 @@ async function makeCallToLLM(
                     const last = msgs[msgs.length - 1];
                     return [...msgs.slice(0, -1), { ...last, tool_calls: toolCalls }];
                 });
+                
+                setStats(prev => ({ ...prev, status: 'tool_running', contextSize }));
                 await new Promise(r => setTimeout(r, 50));
                 for (const tc of toolCalls) {
                     const args = JSON.parse(tc.function.arguments);
                     const result = await dispatchTool(tc.function.name, args);
                     updateMessages(msgs => [...msgs, { role: 'tool', tool_call_id: tc.id, content: String(result) }]);
                 }
-                await makeCallToLLM(undefined, updateMessages, messagesRef, tools, depth + 1);
+                await makeCallToLLM(undefined, updateMessages, messagesRef, tools, setStats, depth + 1);
             }
         }
     }
+    setStats(prev => ({ ...prev, status: 'idle', contextSize }));
 }
+
 
 // --- UI Components ---
 
@@ -356,6 +391,7 @@ const App = () => {
     const messagesRef = useRef<Message[]>([]);
     const [input, setInput] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
+    const [stats, setStats] = useState<Stats>({ tokens: 0, tps: 0, status: 'idle', contextSize: 0 });
     const { exit } = useApp();
     const [tools, setTools] = useState<any[]>(toolsDefinition);
 
@@ -387,13 +423,13 @@ const App = () => {
     const handleInput = async (value: string) => {
         if (!value.trim() || isProcessing) return;
         if (value === '/exit') { exit(); return; }
-        if (value === '/reset') { updateMessages(() => []); setIsProcessing(false); return; }
+        if (value === '/reset') { updateMessages(() => []); setIsProcessing(false); setStats({ tokens: 0, tps: 0, status: 'idle', contextSize: 0 }); return; }
 
         setIsProcessing(true);
         setInput('');
         try {
             const currentTools = tools.length > 0 ? tools : toolsDefinition;
-            await makeCallToLLM(value, updateMessages, messagesRef, currentTools);
+            await makeCallToLLM(value, updateMessages, messagesRef, currentTools, setStats);
         } catch (e) {
             console.log("Error:", e);
         } finally {
@@ -418,6 +454,15 @@ const App = () => {
             <Box>
                 <Text color="white" bold>{'> '}</Text>
                 <TextInput value={input} onChange={setInput} onSubmit={handleInput} />
+            </Box>
+            {/* --- Stats Bar --- */}
+            <Box borderStyle="round" borderColor="gray" marginBottom={1} paddingX={1}>
+                <Text color="gray">
+                    Status: <Text color="cyan">{stats.status.toUpperCase()}</Text> | 
+                    Tokens: <Text color="cyan">{stats.tokens}</Text> | 
+                    TPS: <Text color="cyan">{stats.tps.toFixed(1)}</Text> | 
+                    Context: <Text color="cyan">{stats.contextSize}</Text>
+                </Text>
             </Box>
         </Box>
     );
