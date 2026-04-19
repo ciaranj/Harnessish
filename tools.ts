@@ -175,13 +175,24 @@ export const toolsDefinition: any[] = [
             "type": "function",
             "function": {
                 "name": "get_file_tree",
-                "description": "Returns a recursive directory tree structure of a path.",
+                "description": "Returns a recursive directory tree structure of a path. Use max_depth to prevent context explosion.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "path": {
                             "type": "string",
                             "description": "The root path to generate the tree from."
+                        },
+                        "max_depth": {
+                            "type": "number",
+                            "description": "Maximum depth to recurse. Default is 3."
+                        },
+                        "ignore_patterns": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "List of directory names to ignore (e.g. ['node_modules', '.git'])."
                         }
                     },
                     "required": ["path"]

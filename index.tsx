@@ -131,19 +131,35 @@ async function appendLocalFile(path: string, content: string): Promise<string> {
     catch (error: any) { return `Error: ${error.message}`; }
 }
 
-async function getFileTree(dirPath: string): Promise<string> {
+async function getFileTree(dirPath: string, maxDepth: number = 3, ignorePatterns: string[] = ['node_modules', '.git', 'build', 'dist']): Promise<string> {
     try {
-        async function build(p: string, indent = ""): Promise<string> {
-            const entries = await readdir(p, { withFileTypes: true });
+        async function build(p: string, currentDepth: number, indent = ""): Promise<string> {
+            if (currentDepth > maxDepth) return "";
+            let entries;
+            try {
+                entries = await readdir(p, { withFileTypes: true });
+            } catch (e: any) { return `${indent}[DIR] ${path.basename(p)} (Permission Denied)\n`; }
+
             let tree = "";
-            for (const e of entries) {
+            const sortedEntries = entries.sort((a, b) => {
+                if (a.isDirectory() && !b.isDirectory()) return -1;
+                if (!a.isDirectory() && b.isDirectory()) return 1;
+                return a.name.localeCompare(b.name);
+            });
+
+            for (const e of sortedEntries) {
+                if (ignorePatterns.some(pattern => e.name === pattern || e.name.startsWith(pattern + '/'))) {
+                    continue;
+                }
                 const fp = path.join(p, e.name);
                 tree += `${indent}${e.isDirectory() ? '[DIR]' : '[FILE]'} ${e.name}\n`;
-                if (e.isDirectory()) tree += await build(fp, indent + "  ");
+                if (e.isDirectory()) {
+                    tree += await build(fp, currentDepth + 1, indent + "  ");
+                }
             }
             return tree;
         }
-        return await build(dirPath);
+        return await build(dirPath, 0);
     } catch (error: any) { return `Error: ${error.message}`; }
 }
 
@@ -231,7 +247,7 @@ async function dispatchTool(name: string, args: any) {
     if (name === 'write_to_file') return await writeLocalFile(args.path, args.content);
     if (name === 'replace_content') return await replaceContentLocal(args.path, args.search_string, args.replacement_string);
     if (name === 'append_to_file') return await appendLocalFile(args.path, args.content);
-    if (name === 'get_file_tree') return await getFileTree(args.path);
+    if (name === 'get_file_tree') return await getFileTree(args.path, args.max_depth, args.ignore_patterns);
     if (name === 'grep_file') return await grepFile(args.path, args.pattern);
     if (name === 'find_file') return await findFile(args.pattern, args.path);
     if (name === 'search_web') return await searchWeb(args.query);
