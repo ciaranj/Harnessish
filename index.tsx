@@ -499,7 +499,7 @@ const App = () => {
         const init = async () => {
             const healthy = await fetch(OLLAMA_HEALTH_URL).then(r => r.ok).catch(() => false);
             if (!healthy) console.log("Ollama not found.");
-            const mcpOk = await connectToServer();
+/*            const mcpOk = await connectToServer();
             if (mcpOk) {
                 const res = await mcpClient.listTools();
                 const mcpTools = res.tools.map(t => ({
@@ -507,7 +507,7 @@ const App = () => {
                     function: { name: t.name, description: t.description, parameters: t.inputSchema }
                 }));
                 setTools(prev => [...prev, ...mcpTools]);
-            }
+            } */
         };
         init();
     }, []);
