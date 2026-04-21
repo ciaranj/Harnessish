@@ -4,6 +4,9 @@ import TextInput from 'ink-text-input';
 import { Message, Stats } from './types.js';
 import { toolsDefinition } from './tools.js';
 import { OLLAMA_HEALTH_URL } from './constants.js';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 // --- UI Helpers ---
 
@@ -102,6 +105,7 @@ export const App = ({ makeCallToLLM }: AppProps) => {
     const [input, setInput] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
     const [stats, setStats] = useState<Stats>({ tokens: 0, tps: 0, status: 'idle', contextSize: 0 });
+    const [notification, setNotification] = useState<string | null>(null);
     const { exit } = useApp();
     const [tools, setTools] = useState<any[]>(toolsDefinition);
 
@@ -117,8 +121,8 @@ export const App = ({ makeCallToLLM }: AppProps) => {
     }, []);
 
     const [termWidth, termHeight] = useStdoutDimensions();
-    // Reserve rows: padding(2) + msg borders(2, outside content-box) + marginBottom(1) + input(1) + stats box(3) + marginTop(1)
-    const VIEWPORT_HEIGHT = Math.max(5, termHeight - 10);
+    // Reserve rows: padding(2) + msg borders(2, outside content-box) + marginBottom(1) + input(1) + stats box(3) + notification(1) + marginTop(1)
+    const VIEWPORT_HEIGHT = Math.max(5, termHeight - 12);
     const terminalWidth = termWidth - 4;
 
     const renderLines = useMemo(() => {
@@ -131,6 +135,14 @@ export const App = ({ makeCallToLLM }: AppProps) => {
             setScrollOffset(Math.max(0, renderLines.length - VIEWPORT_HEIGHT));
         }
     }, [renderLines.length, isNavMode]);
+
+    // Clear notification after 10 seconds
+    useEffect(() => {
+        if (notification) {
+            const timer = setTimeout(() => setNotification(null), 10000);
+            return () => clearTimeout(timer);
+        }
+    }, [notification]);
 
     // Handle Keyboard for Scrolling
     useInput((input, key) => {
@@ -171,7 +183,28 @@ export const App = ({ makeCallToLLM }: AppProps) => {
     const handleInput = async (value: string) => {
         if (!value.trim() || isProcessing) return;
         if (value === '/exit') { exit(); return; }
-        if (value === '/reset') { updateMessages(() => []); setIsProcessing(false); setStats({ tokens: 0, tps: 0, status: 'idle', contextSize: 0 }); return; }
+        if (value === '/reset') { 
+            updateMessages(() => []); setIsProcessing(false); setStats({ tokens: 0, tps: 0, status: 'idle', contextSize: 0 });
+            setInput('');
+            return;
+        }
+        
+        if (value === '/dump_context' ) {
+            try {
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const filename = `context_dump_${timestamp}.json`;
+                const filePath = path.join(os.tmpdir(), filename);
+                
+                const data = JSON.stringify(messagesRef.current, null, 2);
+                fs.writeFileSync(filePath, data);
+                
+                setNotification(`Context dumped to: ${filePath}`);
+            } catch (err) {
+                setNotification(`Failed to dump context: ${err instanceof Error ? err.message : String(err)}`);
+            }
+            setInput('');
+            return;
+        }
 
         setIsProcessing(true);
         setInput('');
@@ -224,6 +257,13 @@ export const App = ({ makeCallToLLM }: AppProps) => {
                     ))
                 )}
             </Box>
+
+            {/* --- Notification Area --- */}
+            {notification && (
+                <Box marginBottom={1} borderStyle="single" borderColor="magenta">
+                    <Text color="magenta" dimColor> {notification} </Text>
+                </Box>
+            )}
 
             {/* --- Input Area --- */}
             <Box>
