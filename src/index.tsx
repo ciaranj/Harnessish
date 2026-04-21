@@ -1,18 +1,16 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React from 'react';
 import { render } from 'ink';
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp";
 
 import { StringDecoder } from 'node:string_decoder';
 import { readFile, writeFile, readdir, appendFile} from 'node:fs/promises';
-import  fs  from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
-import { toolsDefinition } from './tools.js';
 import { Message, Stats } from './types.js';
-import { OLLAMA_HEALTH_URL, OLLAMA_CHAT_URL, SEARXNG_URL, systemPrompt } from './constants.js';
+import { OLLAMA_CHAT_URL, SEARXNG_URL, systemPrompt } from './constants.js';
 import { App } from './ui.js';
 
 const execAsync = promisify(exec);
@@ -287,7 +285,6 @@ async function makeCallToLLM(
             if (delta.reasoning_content) {
                 setStats(prev => ({ ...prev, tokens: tokenCount, tps:0, status: 'thinking', contextSize }));
                 const token = delta.reasoning_content;
-                console.log(token);
                 updateMessages(msgs => {
                     const last = msgs[msgs.length - 1];
                     if (last && last.role === 'assistant') return [...msgs.slice(0, -1), { ...last, reasoning: (last.reasoning || '') + token }];

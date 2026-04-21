@@ -2,10 +2,12 @@
   "name": "harnessish",
   "version": "1.0.0",
   "description": "A ropey AI harness to get my head around some of the tool calling in 'proper' approaches",
-  "main": "index.js",
+  "main": "build/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc && chmod 755 build/index.js"
+    "build": "rm -rf build && tsc && chmod +x build/index.js",
+    "start": "node build/index.js",
+    "dev": "tsx ./src/index.tsx"
   },
   "repository": {
     "type": "git",

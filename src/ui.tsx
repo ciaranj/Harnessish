@@ -134,6 +134,7 @@ export const App = ({ makeCallToLLM }: AppProps) => {
 
     // Handle Keyboard for Scrolling
     useInput((input, key) => {
+
         if (key.ctrl && key.c) {
             const now = Date.now();
             if (lastCtrlCPressTimeRef.current && now - lastCtrlCPressTimeRef.current < 1000) {
