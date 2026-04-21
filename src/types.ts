@@ -11,4 +11,5 @@ export type Stats = {
     tps: number;
     status: 'idle' | 'thinking' | 'generating' | 'tool_calling' | 'tool_running';
     contextSize: number;
+    cachedContextSize: number;
 };

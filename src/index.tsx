@@ -235,7 +235,8 @@ async function makeCallToLLM(
     if (depth > 100) throw new Error("Too many loops");
     if (message) updateMessages(msgs => [...msgs, { role: 'user', content: message }]);
     
-    setStats({ tokens: 0, tps: 0, status: 'thinking', contextSize: 0 });
+    setStats(prev => ({ ...prev, tokens: 0, tps: 0, status: 'idle' }));
+
     const startTime = Date.now();
     let tokenCount = 0;
 
@@ -256,8 +257,6 @@ async function makeCallToLLM(
         body: body,
         signal
     });
-
-    const contextSize = estimateTokens([{ role: 'system', content: systemPrompt }, ...messagesRef.current]);
 
     if (res.status !== 200) throw new Error(`LLM error: ${res.status}`);
 
@@ -280,6 +279,9 @@ async function makeCallToLLM(
                 const data = line.startsWith('data: ') ? line.slice(6) : line;
                 if (data === '[DONE]') break;
                 const payload = JSON.parse(data);
+                if( payload.timings && payload.timings.prompt_n !== undefined ) {
+                    setStats(prev => ({ ...prev, contextSize: payload.timings.prompt_n + payload.timings.cache_n, cachedContextSize: payload.timings.cache_n}));
+                }
                 const delta = payload.choices[0].delta;
 
                 tokenCount++;
@@ -287,7 +289,7 @@ async function makeCallToLLM(
                 const tps = elapsedSeconds > 0 ? tokenCount / elapsedSeconds : 0;
 
                 if (delta.reasoning_content) {
-                    setStats(prev => ({ ...prev, tokens: tokenCount, tps:0, status: 'thinking', contextSize }));
+                    setStats(prev => ({ ...prev, tokens: tokenCount, tps:0, status: 'thinking' }));
                     const token = delta.reasoning_content;
                     updateMessages(msgs => {
                         const last = msgs[msgs.length - 1];
@@ -297,7 +299,7 @@ async function makeCallToLLM(
                 }
 
                 if (delta.tool_calls) {
-                    setStats(prev => ({ ...prev, tokens: tokenCount, tps, status: 'tool_calling', contextSize }));
+                    setStats(prev => ({ ...prev, tokens: tokenCount, tps, status: 'tool_calling' }));
                     for (const tc of delta.tool_calls) {
                         if (!toolCalls[tc.index]) toolCalls[tc.index] = { id: tc.id, type: tc.type, function: { name: tc.function.name, arguments: '' } };
                         toolCalls[tc.index].function.arguments += tc.function.arguments ?? '';
@@ -305,7 +307,7 @@ async function makeCallToLLM(
                 }
 
                 if (delta.content) {
-                    setStats(prev => ({ ...prev, tokens: tokenCount, tps, status: 'generating', contextSize }));
+                    setStats(prev => ({ ...prev, tokens: tokenCount, tps, status: 'generating' }));
                     const token = delta.content;
                     response += token;
                     updateMessages(msgs => {
@@ -321,7 +323,7 @@ async function makeCallToLLM(
                         return [...msgs.slice(0, -1), { ...last, tool_calls: toolCalls }];
                     });
                     
-                    setStats(prev => ({ ...prev, status: 'tool_running', contextSize }));
+                    setStats(prev => ({ ...prev, status: 'tool_running' }));
                     await appendFile("prompts.txt", "----\n EXECUTING " +  toolCalls.length + " tools: " + JSON.stringify(toolCalls)+ "\n---\n", 'utf-8');
 
                     for (const tc of toolCalls) {
@@ -339,7 +341,7 @@ async function makeCallToLLM(
         }
         throw e;
     }
-    setStats(prev => ({ ...prev, status: 'idle', contextSize }));
+    setStats(prev => ({ ...prev, status: 'idle' }));
 }
 
 

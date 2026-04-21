@@ -104,7 +104,7 @@ export const App = ({ makeCallToLLM }: AppProps) => {
     const messagesRef = useRef<Message[]>([]);
     const [input, setInput] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
-    const [stats, setStats] = useState<Stats>({ tokens: 0, tps: 0, status: 'idle', contextSize: 0 });
+    const [stats, setStats] = useState<Stats>({ tokens: 0, tps: 0, status: 'idle', contextSize: 0, cachedContextSize:0 });
     const [notification, setNotification] = useState<string | null>(null);
     const { exit } = useApp();
     const [tools, setTools] = useState<any[]>(toolsDefinition);
@@ -217,7 +217,7 @@ export const App = ({ makeCallToLLM }: AppProps) => {
         if (!value.trim() || isProcessing || isConfirmingCancel) return;
         if (value === '/exit') { exit(); return; }
         if (value === '/reset') { 
-            updateMessages(() => []); setIsProcessing(false); setStats({ tokens: 0, tps: 0, status: 'idle', contextSize: 0 });
+            updateMessages(() => []); setIsProcessing(false); setStats({ tokens: 0, tps: 0, status: 'idle', contextSize: 0, cachedContextSize:0 });
             setInput('');
             return;
         }
@@ -341,7 +341,7 @@ export const App = ({ makeCallToLLM }: AppProps) => {
                     Status: <Text color="cyan">{stats.status.toUpperCase()}</Text> | 
                     Tokens: <Text color="cyan">{stats.tokens}</Text> | 
                     TPS: <Text color="cyan">{stats.tps.toFixed(1)}</Text> | 
-                    Context: <Text color="cyan">{stats.contextSize}</Text>
+                    Context: <Text color="cyan">{stats.contextSize} ({stats.cachedContextSize} cached)</Text>
                 </Text>
             </Box>
         </Box>
