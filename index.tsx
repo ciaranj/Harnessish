@@ -1,16 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { render, Text, Box, useApp, useInput, useStdout } from 'ink';
-function useStdoutDimensions(): [number, number] {
-    const { stdout } = useStdout();
-    const [dimensions, setDimensions] = useState<[number, number]>([stdout.columns, stdout.rows]);
-    useEffect(() => {
-        const handler = () => setDimensions([stdout.columns, stdout.rows]);
-        stdout.on('resize', handler);
-        return () => { stdout.off('resize', handler); };
-    }, [stdout]);
-    return dimensions;
-}
-import TextInput from 'ink-text-input';
+import { render } from 'ink';
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp";
 
@@ -24,8 +13,10 @@ import { promisify } from 'node:util';
 import { toolsDefinition } from './tools.js';
 import { Message, Stats } from './types.js';
 import { OLLAMA_HEALTH_URL, OLLAMA_CHAT_URL, SEARXNG_URL, systemPrompt } from './constants.js';
+import { App } from './ui.js';
 
 const execAsync = promisify(exec);
+
 // loadEnvFile is now in constants.ts
 function estimateTokens(messages: Message[]): number {
     let total = 0;
@@ -34,71 +25,6 @@ function estimateTokens(messages: Message[]): number {
         if (m.reasoning) total += m.reasoning.length / 4;
     }
     return Math.round(total);
-}
-
-interface RenderLine {
-    content: string;
-    isHeader: boolean;
-    role: string;
-    isReasoning: boolean;
-}
-
-function getRenderLines(messages: Message[], width: number): RenderLine[] {
-    const lines: RenderLine[] = [];
-    for (const msg of messages) {
-        const roleLabel = msg.role === 'user' ? 'USER' : msg.role === 'assistant' ? 'ASSISTANT' : 'TOOL';
-        lines.push({ content: `[${roleLabel}]`, isHeader: true, role: msg.role, isReasoning: false });
-        if (msg.reasoning) {
-            for (const l of wrapText(msg.reasoning, width)) {
-                lines.push({ content: l, isHeader: false, role: msg.role, isReasoning: true });
-            }
-        }
-        for (const l of wrapText(msg.content, width)) {
-            lines.push({ content: l, isHeader: false, role: msg.role, isReasoning: false });
-        }
-    }
-    return lines;
-}
-
-function wrapParagraph(text: string, width: number): string[] {
-    if (!text) return [' '];
-    const lines: string[] = [];
-    const words = text.split(/(\s+)/);
-    let currentLine = "";
-
-    for (const word of words) {
-        if ((currentLine + word).length <= width) {
-            currentLine += word;
-        } else {
-            if (currentLine) lines.push(currentLine.trimEnd());
-            if (word.length > width) {
-                let remaining = word;
-                while (remaining.length > width) {
-                    lines.push(remaining.substring(0, width));
-                    remaining = remaining.substring(width);
-                }
-                currentLine = remaining;
-            } else {
-                currentLine = word.trimStart();
-            }
-        }
-    }
-    if (currentLine) lines.push(currentLine.trimEnd());
-    return lines.length ? lines : [' '];
-}
-
-function wrapText(text: string, width: number): string[] {
-    if (!text) return [];
-    const paragraphs = text.split('\n');
-    const result: string[] = [];
-    for (const para of paragraphs) {
-        result.push(...wrapParagraph(para, width));
-    }
-    // Trim trailing blank lines (e.g. from content ending with \n)
-    while (result.length > 0 && result[result.length - 1].trim() === '') {
-        result.pop();
-    }
-    return result;
 }
 
 // --- MCP Client ---
@@ -231,59 +157,40 @@ async function grepFile(filePath: string, pattern: string): Promise<string> {
     }
 }
 
-/**
-  * Finds files by name or pattern within a directory.
-  *
-  * @param {string} pattern - The filename or pattern to search for (e.g., 'utils.ts' or '*.test.ts').
-  * @param {string} [startPath='.'] - The directory to start the search from.
-  * @returns {Promise<string[]>} - A list of matching file paths.
-  */
- async function findFile(pattern:string, startPath:string = '.' ) {
-    console.log("Called with: " + pattern + " path :" + startPath );
-     const results:string[] = [];
+async function findFile(pattern:string, startPath:string = '.' ) {
+    const results:string[] = [];
 
-     // Helper to convert glob patterns (*, ?) to Regular Expressions
-     const globToRegex = (glob:string) => {
-         // Escape special regex characters except for * and ?
-         let regexStr = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-         // Convert glob '*' to regex '.*'
-         regexStr = regexStr.replace(/\*/g, '.*');
-         // Convert glob '?' to regex '.'
-         regexStr = regexStr.replace(/\?/g, '.');
-         // Match the whole string
-         return new RegExp(`^${regexStr}$`);
-     };
+    const globToRegex = (glob:string) => {
+        let regexStr = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+        regexStr = regexStr.replace(/\*/g, '.*');
+        regexStr = regexStr.replace(/\?/g, '.');
+        return new RegExp(`^${regexStr}$`);
+    };
 
-     const patternRegex = globToRegex(pattern);
+    const patternRegex = globToRegex(pattern);
 
-     async function walk(currentDir:string) {
-         try {
-             const entries = await readdir(currentDir, { withFileTypes: true });
-             for (const entry of entries) {
-                 const fullPath = path.join(currentDir, entry.name);
+    async function walk(currentDir:string) {
+        try {
+            const entries = await readdir(currentDir, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = path.join(currentDir, entry.name);
+                if (entry.isDirectory()) {
+                    await walk(fullPath);
+                } else if (entry.isFile()) {
+                    if (patternRegex.test(entry.name)) {
+                        results.push(fullPath);
+                    }
+                }
+            }
+        } catch (error:any) {
+            console.error(`Error reading directory ${currentDir}: ${error.message}`);
+        }
+    }
 
-                 if (entry.isDirectory()) {
-                     // Recursively search subdirectories
-                     await walk(fullPath);
-                 } else if (entry.isFile()) {
-                     // Check if the filename matches the pattern
-                     if (patternRegex.test(entry.name)) {
-                         results.push(fullPath);
-                     }
-                 }
-             }
-         } catch (error:any) {
-             // Handle errors like permission denied or directory not found
-             console.error(`Error reading directory ${currentDir}: ${error.message}`);
-         }
-     }
-
-     // Resolve the absolute path to ensure consistency
-     const absoluteStartPath = path.resolve(startPath);
-     await walk(absoluteStartPath);
-
-     return results;
- }
+    const absoluteStartPath = path.resolve(startPath);
+    await walk(absoluteStartPath);
+    return results;
+}
 
 // --- MCP Client ---
 
@@ -333,10 +240,7 @@ async function makeCallToLLM(
     const startTime = Date.now();
     let tokenCount = 0;
 
-    const res = await fetch(`${OLLAMA_CHAT_URL}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+    const body = JSON.stringify({
             model: process.env.MODEL,
             messages: [
                 { role: 'system', content: systemPrompt },
@@ -345,8 +249,14 @@ async function makeCallToLLM(
             tools,
             stream: true,
             cache_prompt: true
-        }),
     });
+    await appendFile("prompts.txt", "----\n" + body + "\n---\n", 'utf-8');
+    const res = await fetch(`${OLLAMA_CHAT_URL}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body
+    });
+
     const contextSize = estimateTokens([{ role: 'system', content: systemPrompt }, ...messagesRef.current]);
 
     if (res.status !== 200) throw new Error(`LLM error: ${res.status}`);
@@ -377,6 +287,7 @@ async function makeCallToLLM(
             if (delta.reasoning_content) {
                 setStats(prev => ({ ...prev, tokens: tokenCount, tps:0, status: 'thinking', contextSize }));
                 const token = delta.reasoning_content;
+                console.log(token);
                 updateMessages(msgs => {
                     const last = msgs[msgs.length - 1];
                     if (last && last.role === 'assistant') return [...msgs.slice(0, -1), { ...last, reasoning: (last.reasoning || '') + token }];
@@ -410,7 +321,8 @@ async function makeCallToLLM(
                 });
                 
                 setStats(prev => ({ ...prev, status: 'tool_running', contextSize }));
-                await new Promise(r => setTimeout(r, 50));
+                await appendFile("prompts.txt", "----\n EXECUTING " +  toolCalls.length + " tools: " + JSON.stringify(toolCalls)+ "\n---\n", 'utf-8');
+
                 for (const tc of toolCalls) {
                     const args = JSON.parse(tc.function.arguments);
                     const result = await dispatchTool(tc.function.name, args);
@@ -424,169 +336,11 @@ async function makeCallToLLM(
 }
 
 
-// --- UI Components ---
+// --- Main Entry Point ---
 
-const App = () => {
-    const [messages, setMessages] = useState<Message[]>([]);
-    const messagesRef = useRef<Message[]>([]);
-    const lastCtrlCPressTimeRef = useRef<number | null>(null);
-    const [input, setInput] = useState('');
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [stats, setStats] = useState<Stats>({ tokens: 0, tps: 0, status: 'idle', contextSize: 0 });
-    const { exit } = useApp();
-    const [tools, setTools] = useState<any[]>(toolsDefinition);
+async function main() {
+    //await connectToServer();
+    render(<App makeCallToLLM={makeCallToLLM} />);
+}
 
-    // --- Scrolling State ---
-    const [scrollOffset, setScrollOffset] = useState(0);
-    const [isNavMode, setIsNavMode] = useState(false);
-
-    const updateMessages = useCallback((updateFn: (msgs: Message[]) => Message[]) => {
-        const next = updateFn([...messagesRef.current]);
-        messagesRef.current = next;
-        setMessages(next);
-        return next;
-    }, []);
-
-    const [termWidth, termHeight] = useStdoutDimensions();
-    // Reserve rows: padding(2) + msg borders(2, outside content-box) + marginBottom(1) + input(1) + stats box(3) + marginTop(1)
-    const VIEWPORT_HEIGHT = Math.max(5, termHeight - 10);
-    const terminalWidth = termWidth - 4;
-
-    const renderLines = useMemo(() => {
-        return getRenderLines(messages, terminalWidth);
-    }, [messages, terminalWidth]);
-
-    // Auto-scroll to bottom when new lines arrive and not in nav mode
-    useEffect(() => {
-        if (!isNavMode) {
-            setScrollOffset(Math.max(0, renderLines.length - VIEWPORT_HEIGHT));
-        }
-    }, [renderLines.length, isNavMode]);
-
-    // Handle Keyboard for Scrolling
-    useInput((input, key) => {
-        if (key.ctrl && key.c) {
-            const now = Date.now();
-            if (lastCtrlCPressTimeRef.current && now - lastCtrlCPressTimeRef.current < 1000) {
-                exit();
-            }
-            lastCtrlCPressTimeRef.current = now;
-            return;
-        }
-
-        if (isNavMode) {
-            if (key.upArrow) {
-                setScrollOffset((prev) => Math.max(0, prev - 1));
-            } else if (key.downArrow) {
-                const maxScroll = Math.max(0, renderLines.length - VIEWPORT_HEIGHT);
-                setScrollOffset((prev) => Math.min(maxScroll, prev + 1));
-            } else if (key.escape || input === '') {
-                setIsNavMode(false);
-            }
-        } else {
-            if (key.escape) {
-                setIsNavMode(true);
-            }
-        }
-    });
-
-    useEffect(() => {
-        const init = async () => {
-            const healthy = await fetch(OLLAMA_HEALTH_URL).then(r => r.ok).catch(() => false);
-            if (!healthy) console.log("Ollama not found.");
-/*            const mcpOk = await connectToServer();
-            if (mcpOk) {
-                const res = await mcpClient.listTools();
-                const mcpTools = res.tools.map(t => ({
-                    type: "function",
-                    function: { name: t.name, description: t.description, parameters: t.inputSchema }
-                }));
-                setTools(prev => [...prev, ...mcpTools]);
-            } */
-        };
-        init();
-    }, []);
-
-    const handleInput = async (value: string) => {
-        if (!value.trim() || isProcessing) return;
-        if (value === '/exit') { exit(); return; }
-        if (value === '/reset') { updateMessages(() => []); setIsProcessing(false); setStats({ tokens: 0, tps: 0, status: 'idle', contextSize: 0 }); return; }
-
-        setIsProcessing(true);
-        setInput('');
-        try {
-            const currentTools = tools.length > 0 ? tools : toolsDefinition;
-            await makeCallToLLM(value, updateMessages, messagesRef, currentTools, setStats);
-        } catch (e) {
-            console.log("Error:", e);
-        } finally {
-            setIsProcessing(false);
-        }
-    };
-
-    const visibleLines = useMemo(() => {
-        const lines = renderLines.slice(scrollOffset, scrollOffset + VIEWPORT_HEIGHT);
-        const pad = VIEWPORT_HEIGHT - lines.length;
-        if (pad > 0) {
-            const empty: RenderLine = { content: ' ', isHeader: false, role: 'user', isReasoning: false };
-            return [...lines, ...Array(pad).fill(empty)];
-        }
-        return lines;
-    }, [renderLines, scrollOffset, VIEWPORT_HEIGHT]);
-
-    return (
-        <Box flexDirection="column" padding={1}>
-            {/* --- Message Display Area (Scrollable) --- */}
-            <Box
-                flexDirection="column"
-                height={VIEWPORT_HEIGHT}
-                borderStyle="single"
-                borderColor={isNavMode ? "yellow" : "gray"}
-                marginBottom={1}
-            >
-                {visibleLines.length === 0 ? (
-                    <Text color="gray" dimColor>No messages yet. Type something below!</Text>
-                ) : (
-                    visibleLines.map((line, i) => (
-                        <Text 
-                            key={i} 
-                            color={
-                                line.isHeader 
-                                    ? (line.role === 'user' ? 'green' : line.role === 'assistant' ? 'cyan' : 'yellow') 
-                                    : (line.isReasoning ? 'gray' : 'white')
-                            }
-                            bold={line.isHeader}
-                            italic={line.isReasoning}
-                        >
-                            {line.content}
-                        </Text>
-                    ))
-                )}
-            </Box>
-
-            {/* --- Input Area --- */}
-            <Box>
-                <Text color={isNavMode ? "yellow" : "white"} bold>{isNavMode ? '[NAV MODE - Esc to type] > ' : '> '}</Text>
-                <TextInput 
-                    value={input} 
-                    onChange={setInput} 
-                    onSubmit={handleInput} 
-                    disabled={isNavMode}
-                />
-            </Box>
-
-            {/* --- Stats Bar --- */}
-            <Box borderStyle="round" borderColor="gray" marginTop={1} paddingX={1}>
-                <Text color="gray">
-                    {isNavMode ? "MODE: NAVIGATION (Arrows to scroll)" : "MODE: INPUT"} | 
-                    Status: <Text color="cyan">{stats.status.toUpperCase()}</Text> | 
-                    Tokens: <Text color="cyan">{stats.tokens}</Text> | 
-                    TPS: <Text color="cyan">{stats.tps.toFixed(1)}</Text> | 
-                    Context: <Text color="cyan">{stats.contextSize}</Text>
-                </Text>
-            </Box>
-        </Box>
-    );
-};
-
-render(<App />);
+main();
