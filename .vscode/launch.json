@@ -5,9 +5,8 @@
       "type": "node",
       "request": "launch",
       "name": "Debug Harnessish (tsx)",
-      "runtimeExecutable": "node",
+      "runtimeExecutable": "npx",
       "runtimeArgs": [
-        "--import",
         "tsx",
         "${workspaceFolder}/src/index.tsx"
       ],
