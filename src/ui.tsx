@@ -94,14 +94,14 @@ interface AppProps {
         messagesRef: React.MutableRefObject<Message[]>,
         tools: any[],
         setStats: React.Dispatch<React.SetStateAction<Stats>>,
-        depth?: number
+        depth?: number,
+        signal?: AbortSignal
     ) => Promise<void>;
 }
 
 export const App = ({ makeCallToLLM }: AppProps) => {
     const [messages, setMessages] = useState<Message[]>([]);
     const messagesRef = useRef<Message[]>([]);
-    const lastCtrlCPressTimeRef = useRef<number | null>(null);
     const [input, setInput] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
     const [stats, setStats] = useState<Stats>({ tokens: 0, tps: 0, status: 'idle', contextSize: 0 });
@@ -113,6 +113,11 @@ export const App = ({ makeCallToLLM }: AppProps) => {
     const [scrollOffset, setScrollOffset] = useState(0);
     const [isNavMode, setIsNavMode] = useState(false);
 
+    // --- Cancellation State ---
+    const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
+    const abortControllerRef = useRef<AbortController | null>(null);
+    const suppressNextInputChange = useRef(false);
+
     const updateMessages = useCallback((updateFn: (msgs: Message[]) => Message[]) => {
         const next = updateFn([...messagesRef.current]);
         messagesRef.current = next;
@@ -121,8 +126,28 @@ export const App = ({ makeCallToLLM }: AppProps) => {
     }, []);
 
     const [termWidth, termHeight] = useStdoutDimensions();
-    // Reserve rows: padding(2) + msg borders(2, outside content-box) + marginBottom(1) + input(1) + stats box(3) + notification(1) + marginTop(1)
-    const VIEWPORT_HEIGHT = Math.max(5, termHeight - 12);
+
+    const reservedHeight = useMemo(() => {
+        let height = 0;
+        height += 1; // Top padding of root Box
+        height += 1; // marginBottom of Message Box
+        height += 1; // Input area
+        height += 1; // marginTop of Stats Bar
+        height += 1; // Stats Bar content itself
+        height += 1; // Bottom padding of root Box
+        
+        if (notification) {
+            height += 2; // Notification box + marginBottom
+        }
+        
+        if (isConfirmingCancel) {
+            height += 2; // Confirmation box + marginBottom
+        }
+        
+        return height;
+    }, [notification, isConfirmingCancel]);
+
+    const VIEWPORT_HEIGHT = Math.max(5, termHeight - reservedHeight);
     const terminalWidth = termWidth - 4;
 
     const renderLines = useMemo(() => {
@@ -131,10 +156,10 @@ export const App = ({ makeCallToLLM }: AppProps) => {
 
     // Auto-scroll to bottom when new lines arrive and not in nav mode
     useEffect(() => {
-        if (!isNavMode) {
+        if (!isNavMode && !isConfirmingCancel) {
             setScrollOffset(Math.max(0, renderLines.length - VIEWPORT_HEIGHT));
         }
-    }, [renderLines.length, isNavMode]);
+    }, [renderLines.length, isNavMode, isConfirmingCancel]);
 
     // Clear notification after 10 seconds
     useEffect(() => {
@@ -144,15 +169,18 @@ export const App = ({ makeCallToLLM }: AppProps) => {
         }
     }, [notification]);
 
-    // Handle Keyboard for Scrolling
+    // Handle Keyboard for Scrolling and Cancellation
     useInput((input, key) => {
-
-        if (key.ctrl && key.c) {
-            const now = Date.now();
-            if (lastCtrlCPressTimeRef.current && now - lastCtrlCPressTimeRef.current < 1000) {
-                exit();
-            }
-            lastCtrlCPressTimeRef.current = now;
+        if (isConfirmingCancel) {
+            if (input.toLowerCase() === 'y') {
+                if (stats.status === 'idle') {
+                    exit();
+                } else {
+                    abortControllerRef.current?.abort();
+                }
+            } 
+            setIsConfirmingCancel(false);
+            suppressNextInputChange.current = true;
             return;
         }
 
@@ -166,7 +194,12 @@ export const App = ({ makeCallToLLM }: AppProps) => {
                 setIsNavMode(false);
             }
         } else {
-            if (key.escape) {
+            if ( key.escape ) {
+                setIsConfirmingCancel(true);
+                return;
+            }
+            if (key.ctrl && input === 'n') {
+                suppressNextInputChange.current = true;
                 setIsNavMode(true);
             }
         }
@@ -181,7 +214,7 @@ export const App = ({ makeCallToLLM }: AppProps) => {
     }, []);
 
     const handleInput = async (value: string) => {
-        if (!value.trim() || isProcessing) return;
+        if (!value.trim() || isProcessing || isConfirmingCancel) return;
         if (value === '/exit') { exit(); return; }
         if (value === '/reset') { 
             updateMessages(() => []); setIsProcessing(false); setStats({ tokens: 0, tps: 0, status: 'idle', contextSize: 0 });
@@ -208,13 +241,21 @@ export const App = ({ makeCallToLLM }: AppProps) => {
 
         setIsProcessing(true);
         setInput('');
+        
+        abortControllerRef.current = new AbortController();
+        
         try {
             const currentTools = tools.length > 0 ? tools : toolsDefinition;
-            await makeCallToLLM(value, updateMessages, messagesRef, currentTools, setStats);
+            await makeCallToLLM(value, updateMessages, messagesRef, currentTools, setStats, undefined, abortControllerRef.current.signal);
         } catch (e) {
-            console.log("Error:", e);
+            if (e instanceof Error && e.message === 'Aborted') {
+                setNotification("Turn abandoned.");
+            } else {
+                console.log("Error:", e);
+            }
         } finally {
             setIsProcessing(false);
+            abortControllerRef.current = null;
         }
     };
 
@@ -229,13 +270,13 @@ export const App = ({ makeCallToLLM }: AppProps) => {
     }, [renderLines, scrollOffset, VIEWPORT_HEIGHT]);
 
     return (
-        <Box flexDirection="column" padding={1}>
+        <Box flexDirection="column" padding={0}>
             {/* --- Message Display Area (Scrollable) --- */}
             <Box
                 flexDirection="column"
                 height={VIEWPORT_HEIGHT}
                 borderStyle="single"
-                borderColor={isNavMode ? "yellow" : "gray"}
+                borderColor={isNavMode ? "yellow" : isConfirmingCancel ? "red" : "gray"}
                 marginBottom={1}
             >
                 {visibleLines.length === 0 ? (
@@ -265,14 +306,31 @@ export const App = ({ makeCallToLLM }: AppProps) => {
                 </Box>
             )}
 
+            {/* --- Confirmation Area --- */}
+            {isConfirmingCancel && (
+                <Box marginBottom={1} borderStyle="double" borderColor="red">
+                    <Text color="red" bold>
+                        {stats.status === 'idle'
+                            ? 'Are you sure you want to leave Harnessish? (y/N)'
+                            : 'Are you sure you want to cancel the current turn? (y/N)'}
+                    </Text>
+                </Box>
+            )}
+
             {/* --- Input Area --- */}
             <Box>
-                <Text color={isNavMode ? "yellow" : "white"} bold>{isNavMode ? '[NAV MODE - Esc to type] > ' : '> '}</Text>
-                <TextInput 
-                    value={input} 
-                    onChange={setInput} 
-                    onSubmit={handleInput} 
-                    disabled={isNavMode}
+                <Text color={isNavMode ? "yellow" : isConfirmingCancel ? "red" : "white"} bold>{isNavMode ? '[NAV MODE] > ' : isConfirmingCancel ? stats.status == 'idle' ? '[LEAVING] >': '[CANCELING] > ' : '> '}</Text>
+                <TextInput
+                    value={input}
+                    onChange={(val) => {
+                        if (suppressNextInputChange.current) {
+                            suppressNextInputChange.current = false;
+                            return;
+                        }
+                        setInput(val);
+                    }}
+                    onSubmit={handleInput}
+                    disabled={isNavMode || isConfirmingCancel || isProcessing}
                 />
             </Box>
 

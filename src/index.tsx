@@ -229,7 +229,8 @@ async function makeCallToLLM(
     messagesRef: React.MutableRefObject<Message[]>,
     tools: any[],
     setStats: React.Dispatch<React.SetStateAction<Stats>>,
-    depth: number = 0
+    depth: number = 0,
+    signal?: AbortSignal
 ) {
     if (depth > 100) throw new Error("Too many loops");
     if (message) updateMessages(msgs => [...msgs, { role: 'user', content: message }]);
@@ -252,7 +253,8 @@ async function makeCallToLLM(
     const res = await fetch(`${OLLAMA_CHAT_URL}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: body
+        body: body,
+        signal
     });
 
     const contextSize = estimateTokens([{ role: 'system', content: systemPrompt }, ...messagesRef.current]);
@@ -266,68 +268,76 @@ async function makeCallToLLM(
 
     if (!res.body) throw new Error("No response body");
 
-    for await (const chunk of res.body) {
-        buffer += decoder.write(chunk);
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || "";
+    try {
+        for await (const chunk of res.body) {
+            if (signal?.aborted) throw new Error("Aborted");
+            buffer += decoder.write(chunk);
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || "";
 
-        for (const line of lines) {
-            if (!line.trim()) continue;
-            const data = line.startsWith('data: ') ? line.slice(6) : line;
-            if (data === '[DONE]') break;
-            const payload = JSON.parse(data);
-            const delta = payload.choices[0].delta;
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                const data = line.startsWith('data: ') ? line.slice(6) : line;
+                if (data === '[DONE]') break;
+                const payload = JSON.parse(data);
+                const delta = payload.choices[0].delta;
 
-            tokenCount++;
-            const elapsedSeconds = (Date.now() - startTime) / 1000;
-            const tps = elapsedSeconds > 0 ? tokenCount / elapsedSeconds : 0;
+                tokenCount++;
+                const elapsedSeconds = (Date.now() - startTime) / 1000;
+                const tps = elapsedSeconds > 0 ? tokenCount / elapsedSeconds : 0;
 
-            if (delta.reasoning_content) {
-                setStats(prev => ({ ...prev, tokens: tokenCount, tps:0, status: 'thinking', contextSize }));
-                const token = delta.reasoning_content;
-                updateMessages(msgs => {
-                    const last = msgs[msgs.length - 1];
-                    if (last && last.role === 'assistant') return [...msgs.slice(0, -1), { ...last, reasoning: (last.reasoning || '') + token }];
-                    return [...msgs, { role: 'assistant', content: '', reasoning: token }];
-                });
-            }
-
-            if (delta.tool_calls) {
-                setStats(prev => ({ ...prev, tokens: tokenCount, tps, status: 'tool_calling', contextSize }));
-                for (const tc of delta.tool_calls) {
-                    if (!toolCalls[tc.index]) toolCalls[tc.index] = { id: tc.id, type: tc.type, function: { name: tc.function.name, arguments: '' } };
-                    toolCalls[tc.index].function.arguments += tc.function.arguments ?? '';
+                if (delta.reasoning_content) {
+                    setStats(prev => ({ ...prev, tokens: tokenCount, tps:0, status: 'thinking', contextSize }));
+                    const token = delta.reasoning_content;
+                    updateMessages(msgs => {
+                        const last = msgs[msgs.length - 1];
+                        if (last && last.role === 'assistant') return [...msgs.slice(0, -1), { ...last, reasoning: (last.reasoning || '') + token }];
+                        return [...msgs, { role: 'assistant', content: '', reasoning: token }];
+                    });
                 }
-            }
 
-            if (delta.content) {
-                setStats(prev => ({ ...prev, tokens: tokenCount, tps, status: 'generating', contextSize }));
-                const token = delta.content;
-                response += token;
-                updateMessages(msgs => {
-                    const last = msgs[msgs.length - 1];
-                    if (last && last.role === 'assistant') return [...msgs.slice(0, -1), { ...last, content: last.content + token }];
-                    return [...msgs, { role: 'assistant', content: token }];
-                });
-            }
-
-            if (payload.choices[0].finish_reason === 'tool_calls') {
-                updateMessages(msgs => {
-                    const last = msgs[msgs.length - 1];
-                    return [...msgs.slice(0, -1), { ...last, tool_calls: toolCalls }];
-                });
-                
-                setStats(prev => ({ ...prev, status: 'tool_running', contextSize }));
-                await appendFile("prompts.txt", "----\n EXECUTING " +  toolCalls.length + " tools: " + JSON.stringify(toolCalls)+ "\n---\n", 'utf-8');
-
-                for (const tc of toolCalls) {
-                    const args = JSON.parse(tc.function.arguments);
-                    const result = await dispatchTool(tc.function.name, args);
-                    updateMessages(msgs => [...msgs, { role: 'tool', tool_call_id: tc.id, content: String(result) }]);
+                if (delta.tool_calls) {
+                    setStats(prev => ({ ...prev, tokens: tokenCount, tps, status: 'tool_calling', contextSize }));
+                    for (const tc of delta.tool_calls) {
+                        if (!toolCalls[tc.index]) toolCalls[tc.index] = { id: tc.id, type: tc.type, function: { name: tc.function.name, arguments: '' } };
+                        toolCalls[tc.index].function.arguments += tc.function.arguments ?? '';
+                    }
                 }
-                await makeCallToLLM(undefined, updateMessages, messagesRef, tools, setStats, depth + 1);
+
+                if (delta.content) {
+                    setStats(prev => ({ ...prev, tokens: tokenCount, tps, status: 'generating', contextSize }));
+                    const token = delta.content;
+                    response += token;
+                    updateMessages(msgs => {
+                        const last = msgs[msgs.length - 1];
+                        if (last && last.role === 'assistant') return [...msgs.slice(0, -1), { ...last, content: last.content + token }];
+                        return [...msgs, { role: 'assistant', content: token }];
+                    });
+                }
+
+                if (payload.choices[0].finish_reason === 'tool_calls') {
+                    updateMessages(msgs => {
+                        const last = msgs[msgs.length - 1];
+                        return [...msgs.slice(0, -1), { ...last, tool_calls: toolCalls }];
+                    });
+                    
+                    setStats(prev => ({ ...prev, status: 'tool_running', contextSize }));
+                    await appendFile("prompts.txt", "----\n EXECUTING " +  toolCalls.length + " tools: " + JSON.stringify(toolCalls)+ "\n---\n", 'utf-8');
+
+                    for (const tc of toolCalls) {
+                        const args = JSON.parse(tc.function.arguments);
+                        const result = await dispatchTool(tc.function.name, args);
+                        updateMessages(msgs => [...msgs, { role: 'tool', tool_call_id: tc.id, content: String(result) }]);
+                    }
+                    await makeCallToLLM(undefined, updateMessages, messagesRef, tools, setStats, depth + 1, signal);
+                }
             }
         }
+    } catch (e) {
+        if (signal?.aborted) {
+            throw new Error("Aborted");
+        }
+        throw e;
     }
     setStats(prev => ({ ...prev, status: 'idle', contextSize }));
 }
