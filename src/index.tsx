@@ -12,6 +12,7 @@ import { promisify } from 'node:util';
 import { Message, Stats } from './types.js';
 import { OLLAMA_CHAT_URL, SEARXNG_URL, systemPrompt } from './constants.js';
 import { App } from './ui.js';
+import { buildLLMPayload } from './utils.js';
 
 const execAsync = promisify(exec);
 
@@ -240,16 +241,8 @@ async function makeCallToLLM(
     const startTime = Date.now();
     let tokenCount = 0;
 
-    const body = JSON.stringify({
-            model: process.env.MODEL,
-            messages: [
-                { role: 'system', content: systemPrompt },
-                ...messagesRef.current.filter((message) => (typeof message.reasoning !== undefined) )
-            ],
-            tools,
-            stream: true,
-            cache_prompt: true
-    });
+    const payload = buildLLMPayload(messagesRef.current, tools);
+    const body = JSON.stringify(payload);
     await appendFile("prompts.txt", "----\n" + body + "\n---\n", 'utf-8');
     const res = await fetch(`${OLLAMA_CHAT_URL}`, {
         method: 'POST',
@@ -278,6 +271,7 @@ async function makeCallToLLM(
                 if (!line.trim()) continue;
                 const data = line.startsWith('data: ') ? line.slice(6) : line;
                 if (data === '[DONE]') break;
+
                 const payload = JSON.parse(data);
                 if( payload.timings && payload.timings.prompt_n !== undefined ) {
                     setStats(prev => ({ ...prev, contextSize: payload.timings.prompt_n + payload.timings.cache_n, cachedContextSize: payload.timings.cache_n}));

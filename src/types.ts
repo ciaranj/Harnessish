@@ -1,6 +1,6 @@
 export type Message = {
     role: 'user' | 'assistant' | 'tool' | 'system';
-    content: string;
+    content?: string;
     reasoning?: string;
     tool_calls?: any[];
     tool_call_id?: string;
