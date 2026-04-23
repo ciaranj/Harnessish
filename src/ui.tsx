@@ -73,13 +73,15 @@ function getRenderLines(messages: Message[], width: number): RenderLine[] {
     for (const msg of messages) {
         const roleLabel = msg.role === 'user' ? 'USER' : msg.role === 'assistant' ? 'ASSISTANT' : 'TOOL';
         lines.push({ content: `[${roleLabel}]`, isHeader: true, role: msg.role, isReasoning: false });
-        if (msg.reasoning) {
-            for (const l of wrapText(msg.reasoning, width)) {
+        if (msg.reasoning_content) {
+            for (const l of wrapText(msg.reasoning_content, width)) {
                 lines.push({ content: l, isHeader: false, role: msg.role, isReasoning: true });
             }
         }
-        for (const l of wrapText(msg.content, width)) {
-            lines.push({ content: l, isHeader: false, role: msg.role, isReasoning: false });
+        if (msg.content) {
+            for (const l of wrapText(msg.content, width)) {
+                lines.push({ content: l, isHeader: false, role: msg.role, isReasoning: false });
+            }
         }
     }
     return lines;

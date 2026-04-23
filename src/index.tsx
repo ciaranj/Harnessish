@@ -275,8 +275,8 @@ async function makeCallToLLM(
                     const token = delta.reasoning_content;
                     updateMessages(msgs => {
                         const last = msgs[msgs.length - 1];
-                        if (last && last.role === 'assistant') return [...msgs.slice(0, -1), { ...last, reasoning: (last.reasoning || '') + token }];
-                        return [...msgs, { role: 'assistant', content: '', reasoning: token }];
+                        if (last && last.role === 'assistant') return [...msgs.slice(0, -1), { ...last, reasoning_content: (last.reasoning_content || '') + token }];
+                        return [...msgs, { role: 'assistant', content: '', reasoning_content: token }];
                     });
                 }
 

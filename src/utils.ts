@@ -3,7 +3,7 @@ import { systemPrompt } from './constants.js';
 
 export interface LLMPayload {
     model: string | undefined;
-    messages: { role: string; content: string; reasoning?: string; tool_calls?: any[] }[];
+    messages: { role: string; content?: string; reasoning_content?: string; tool_calls?: any[] }[];
     tools: any[];
     stream: boolean;
     cache_prompt: boolean;
@@ -13,7 +13,8 @@ export interface LLMPayload {
  * Builds the payload to be sent to the LLM.
  */
 export function buildLLMPayload(messages: Message[], tools: any[]): LLMPayload {
-    const filteredMessages = messages.filter((message) => typeof message.reasoning === 'undefined');
+    // No-Op filter currently
+    const filteredMessages = messages.filter((message) => true);
  
     return {
         model: process.env.MODEL,
