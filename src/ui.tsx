@@ -332,7 +332,6 @@ export const App = ({ makeCallToLLM }: AppProps) => {
                         setInput(val);
                     }}
                     onSubmit={handleInput}
-                    disabled={isNavMode || isConfirmingCancel || isProcessing}
                 />
             </Box>
 
