@@ -1,12 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Text, Box, useApp, useInput, useStdout } from 'ink';
 import TextInput from 'ink-text-input';
-import { Message, Stats } from './types.js';
-import { toolsDefinition } from './tools.js';
-import { OLLAMA_HEALTH_URL } from './constants.js';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+import { Message, Stats } from '../core/types.js';
+import { toolsDefinition } from '../tools/definitions.js';
+import { OLLAMA_HEALTH_URL } from '../constants.js';
 
 // --- UI Helpers ---
 
@@ -71,10 +68,7 @@ function wrapText(text: string, width: number): string[] {
 function getRenderLines(messages: Message[], width: number): RenderLine[] {
     const lines: RenderLine[] = [];
     for (const msg of messages) {
-        if (msg.role === 'tool') {
-            // Skip tool results by default
-            continue;
-        }
+        if (msg.role === 'tool') continue;
         const roleLabel = msg.role === 'user' ? 'USER' : msg.role === 'assistant' ? 'ASSISTANT' : 'TOOL';
         lines.push({ content: `[${roleLabel}]`, isHeader: true, role: msg.role, isReasoning: false });
         if (msg.reasoning_content) {
@@ -83,7 +77,6 @@ function getRenderLines(messages: Message[], width: number): RenderLine[] {
             }
         }
         if (msg.tool_calls && msg.tool_calls.length > 0) {
-            // Show tool calls concisely - just tool names
             const toolNames = msg.tool_calls.map((tc: any) => tc.function?.name || tc.name).join(', ');
             lines.push({ content: `→ Tools: ${toolNames}`, isHeader: false, role: msg.role, isReasoning: false });
         }
@@ -120,11 +113,8 @@ export const App = ({ makeCallToLLM }: AppProps) => {
     const { exit } = useApp();
     const [tools, setTools] = useState<any[]>(toolsDefinition);
 
-    // --- Scrolling State ---
     const [scrollOffset, setScrollOffset] = useState(0);
     const [isNavMode, setIsNavMode] = useState(false);
-
-    // --- Cancellation State ---
     const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
     const abortControllerRef = useRef<AbortController | null>(null);
     const suppressNextInputChange = useRef(false);
@@ -140,21 +130,14 @@ export const App = ({ makeCallToLLM }: AppProps) => {
 
     const reservedHeight = useMemo(() => {
         let height = 0;
-        height += 1; // Top padding of root Box
-        height += 1; // marginBottom of Message Box
-        height += 1; // Input area
-        height += 1; // marginTop of Stats Bar
-        height += 1; // Stats Bar content itself
-        height += 1; // Bottom padding of root Box
-        
-        if (notification) {
-            height += 2; // Notification box + marginBottom
-        }
-        
-        if (isConfirmingCancel) {
-            height += 2; // Confirmation box + marginBottom
-        }
-        
+        height += 1;
+        height += 1;
+        height += 1;
+        height += 1;
+        height += 1;
+        height += 1;
+        if (notification) height += 2;
+        if (isConfirmingCancel) height += 2;
         return height;
     }, [notification, isConfirmingCancel]);
 
@@ -165,14 +148,12 @@ export const App = ({ makeCallToLLM }: AppProps) => {
         return getRenderLines(messages, terminalWidth);
     }, [messages, terminalWidth]);
 
-    // Auto-scroll to bottom when new lines arrive and not in nav mode
     useEffect(() => {
         if (!isNavMode && !isConfirmingCancel) {
             setScrollOffset(Math.max(0, renderLines.length - VIEWPORT_HEIGHT));
         }
     }, [renderLines.length, isNavMode, isConfirmingCancel]);
 
-    // Clear notification after 10 seconds
     useEffect(() => {
         if (notification) {
             const timer = setTimeout(() => setNotification(null), 10000);
@@ -180,35 +161,25 @@ export const App = ({ makeCallToLLM }: AppProps) => {
         }
     }, [notification]);
 
-    // Handle Keyboard for Scrolling and Cancellation
     useInput((input, key) => {
         if (isConfirmingCancel) {
             if (input.toLowerCase() === 'y') {
-                if (stats.status === 'idle') {
-                    exit();
-                } else {
-                    abortControllerRef.current?.abort();
-                }
-            } 
+                if (stats.status === 'idle') exit();
+                else abortControllerRef.current?.abort();
+            }
             setIsConfirmingCancel(false);
             suppressNextInputChange.current = true;
             return;
         }
 
         if (isNavMode) {
-            if (key.upArrow) {
-                setScrollOffset((prev) => Math.max(0, prev - 1));
-            } else if (key.downArrow) {
+            if (key.upArrow) setScrollOffset((prev) => Math.max(0, prev - 1));
+            else if (key.downArrow) {
                 const maxScroll = Math.max(0, renderLines.length - VIEWPORT_HEIGHT);
                 setScrollOffset((prev) => Math.min(maxScroll, prev + 1));
-            } else if (key.escape || input === '') {
-                setIsNavMode(false);
-            }
+            } else if (key.escape || input === '') setIsNavMode(false);
         } else {
-            if ( key.escape ) {
-                setIsConfirmingCancel(true);
-                return;
-            }
+            if (key.escape) { setIsConfirmingCancel(true); return; }
             if (key.ctrl && input === 'n') {
                 suppressNextInputChange.current = true;
                 setIsNavMode(true);
@@ -233,15 +204,16 @@ export const App = ({ makeCallToLLM }: AppProps) => {
             return;
         }
         
-        if (value === '/dump_context' ) {
+        if (value === '/dump_context') {
             try {
                 const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
                 const filename = `context_dump_${timestamp}.json`;
+                const fs = await import('node:fs');
+                const path = (await import('node:path')).default;
+                const os = await import('node:os');
                 const filePath = path.join(os.tmpdir(), filename);
-                
                 const data = JSON.stringify(messagesRef.current, null, 2);
-                fs.writeFileSync(filePath, data);
-                
+                fs.default.writeFileSync(filePath, data);
                 setNotification(`Context dumped to: ${filePath}`);
             } catch (err) {
                 setNotification(`Failed to dump context: ${err instanceof Error ? err.message : String(err)}`);
@@ -252,18 +224,14 @@ export const App = ({ makeCallToLLM }: AppProps) => {
 
         setIsProcessing(true);
         setInput('');
-        
         abortControllerRef.current = new AbortController();
         
         try {
             const currentTools = tools.length > 0 ? tools : toolsDefinition;
             await makeCallToLLM(value, updateMessages, messagesRef, currentTools, setStats, undefined, abortControllerRef.current.signal);
         } catch (e) {
-            if (e instanceof Error && e.message === 'Aborted') {
-                setNotification("Turn abandoned.");
-            } else {
-                console.log("Error:", e);
-            }
+            if (e instanceof Error && e.message === 'Aborted') setNotification("Turn abandoned.");
+            else console.log("Error:", e);
         } finally {
             setIsProcessing(false);
             abortControllerRef.current = null;
@@ -273,16 +241,13 @@ export const App = ({ makeCallToLLM }: AppProps) => {
     const visibleLines = useMemo(() => {
         const lines = renderLines.slice(scrollOffset, scrollOffset + VIEWPORT_HEIGHT);
         const pad = VIEWPORT_HEIGHT - lines.length;
-        if (pad > 0) {
-            const empty: RenderLine = { content: ' ', isHeader: false, role: 'user', isReasoning: false };
-            return [...lines, ...Array(pad).fill(empty)];
-        }
+        const empty: RenderLine = { content: ' ', isHeader: false, role: 'user', isReasoning: false };
+        if (pad > 0) return [...lines, ...Array(pad).fill(empty)];
         return lines;
     }, [renderLines, scrollOffset, VIEWPORT_HEIGHT]);
 
     return (
         <Box flexDirection="column" padding={0}>
-            {/* --- Message Display Area (Scrollable) --- */}
             <Box
                 flexDirection="column"
                 height={VIEWPORT_HEIGHT}
@@ -310,14 +275,12 @@ export const App = ({ makeCallToLLM }: AppProps) => {
                 )}
             </Box>
 
-            {/* --- Notification Area --- */}
             {notification && (
                 <Box marginBottom={1} borderStyle="single" borderColor="magenta">
                     <Text color="magenta" dimColor> {notification} </Text>
                 </Box>
             )}
 
-            {/* --- Confirmation Area --- */}
             {isConfirmingCancel && (
                 <Box marginBottom={1} borderStyle="double" borderColor="red">
                     <Text color="red" bold>
@@ -328,7 +291,6 @@ export const App = ({ makeCallToLLM }: AppProps) => {
                 </Box>
             )}
 
-            {/* --- Input Area --- */}
             <Box>
                 <Text color={isNavMode ? "yellow" : isConfirmingCancel ? "red" : "white"} bold>{isNavMode ? '[NAV MODE] > ' : isConfirmingCancel ? stats.status == 'idle' ? '[LEAVING] >': '[CANCELING] > ' : '> '}</Text>
                 <TextInput
@@ -344,7 +306,6 @@ export const App = ({ makeCallToLLM }: AppProps) => {
                 />
             </Box>
 
-            {/* --- Stats Bar --- */}
             <Box borderStyle="round" borderColor="gray" marginTop={1} paddingX={1}>
                 <Text color="gray">
                     {isNavMode ? "MODE: NAVIGATION (Arrows to scroll)" : "MODE: INPUT"} | 

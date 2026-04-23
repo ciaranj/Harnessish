@@ -1,4 +1,4 @@
-import { Message } from './types.js';
+import { Message } from './core/types.js';
 import { systemPrompt } from './constants.js';
 
 export interface LLMPayload {
