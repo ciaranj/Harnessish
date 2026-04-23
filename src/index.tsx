@@ -231,7 +231,7 @@ async function makeCallToLLM(
 
     const payload = buildLLMPayload(messagesRef.current, tools);
     const body = JSON.stringify(payload);
-    await appendFile("prompts.txt", "----\n" + body + "\n---\n", 'utf-8');
+
     const res = await fetch(`${OLLAMA_CHAT_URL}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
