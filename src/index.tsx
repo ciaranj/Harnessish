@@ -16,18 +16,6 @@ import { buildLLMPayload } from './utils.js';
 
 const execAsync = promisify(exec);
 
-// loadEnvFile is now in constants.ts
-function estimateTokens(messages: Message[]): number {
-    let total = 0;
-    for (const m of messages) {
-        total += m.content.length / 4;
-        if (m.reasoning) total += m.reasoning.length / 4;
-    }
-    return Math.round(total);
-}
-
-// --- MCP Client ---
-
 async function getGitDiff(path = '', staged = false) {
     try {
         const flag = staged ? '--cached' : '';
