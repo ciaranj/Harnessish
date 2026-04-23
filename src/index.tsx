@@ -224,7 +224,7 @@ async function makeCallToLLM(
     if (depth > 100) throw new Error("Too many loops");
     if (message) updateMessages(msgs => [...msgs, { role: 'user', content: message }]);
     
-    setStats(prev => ({ ...prev, tokens: 0, tps: 0, status: 'idle' }));
+    setStats(prev => ({ ...prev, tokens: 0, tps: 0, status: 'sending' }));
 
     const startTime = Date.now();
     let tokenCount = 0;

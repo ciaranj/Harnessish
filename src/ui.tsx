@@ -71,12 +71,21 @@ function wrapText(text: string, width: number): string[] {
 function getRenderLines(messages: Message[], width: number): RenderLine[] {
     const lines: RenderLine[] = [];
     for (const msg of messages) {
+        if (msg.role === 'tool') {
+            // Skip tool results by default
+            continue;
+        }
         const roleLabel = msg.role === 'user' ? 'USER' : msg.role === 'assistant' ? 'ASSISTANT' : 'TOOL';
         lines.push({ content: `[${roleLabel}]`, isHeader: true, role: msg.role, isReasoning: false });
         if (msg.reasoning_content) {
             for (const l of wrapText(msg.reasoning_content, width)) {
                 lines.push({ content: l, isHeader: false, role: msg.role, isReasoning: true });
             }
+        }
+        if (msg.tool_calls && msg.tool_calls.length > 0) {
+            // Show tool calls concisely - just tool names
+            const toolNames = msg.tool_calls.map((tc: any) => tc.function?.name || tc.name).join(', ');
+            lines.push({ content: `→ Tools: ${toolNames}`, isHeader: false, role: msg.role, isReasoning: false });
         }
         if (msg.content) {
             for (const l of wrapText(msg.content, width)) {
