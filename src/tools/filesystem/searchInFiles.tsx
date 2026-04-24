@@ -6,15 +6,15 @@ import { Tool, ToolCallContext } from '../types.js';
 
 const execAsync = promisify(exec);
 
-interface SearchCodeArgs {
+interface SearchInFilesArgs {
   pattern: string;
   path?: string;
 }
 
-type SearchCodeResult = { success: boolean; matches: string[] };
+type SearchInFilesResult = { success: boolean; matches: string[]; truncated: boolean };
 
-export const searchCode: Tool<SearchCodeArgs, SearchCodeResult> = {
-  name: "search_code",
+export const searchInFiles: Tool<SearchInFilesArgs, SearchInFilesResult> = {
+  name: "search_in_files",
   description: "Search for a pattern in the codebase using grep.",
   schema: {
     type: "object",
@@ -24,23 +24,24 @@ export const searchCode: Tool<SearchCodeArgs, SearchCodeResult> = {
     },
     required: ["pattern"]
   } as const,
-  execute: async ({ pattern, path: searchPath = '.' }: SearchCodeArgs, _ctx?: ToolCallContext): Promise<SearchCodeResult> => {
+  execute: async ({ pattern, path: searchPath = '.' }: SearchInFilesArgs, _ctx?: ToolCallContext): Promise<SearchInFilesResult> => {
     try {
       const { stdout } = await execAsync(`grep -rnE "${pattern}" ${searchPath}`);
-      if (!stdout.trim()) return { success: true, matches: [] };
+      if (!stdout.trim()) return { success: true, matches: [], truncated : false};
       const lines = stdout.trim().split('\n');
-      return { success: true, matches: lines.length > 50 ? lines.slice(0, 50) : lines };
+      const truncated = lines.length > 50;
+      return { success: true, matches: truncated ? lines.slice(0, 50) : lines, truncated };
     } catch (error: any) {
-      return { success: false, matches: [] };
+      return { success: false, matches: [], truncated : false };
     }
   },
-  renderCall: ({ pattern, path: searchPath }: SearchCodeArgs) => (
+  renderCall: ({ pattern, path: searchPath }: SearchInFilesArgs) => (
     <Text color="cyan">grep -rnE "{pattern}" {searchPath || '.'}</Text>
   ),
-  renderResult: (result: SearchCodeResult) => (
+  renderResult: (result: SearchInFilesResult) => (
     <Text color="gray">
       {result.success && result.matches.length > 0
-        ? `${result.matches.length} matches found\n${result.matches.join('\n')}`
+        ? `${result.matches.length} matches found${result.truncated ? ' (truncated)' : ''}\n${result.matches.join('\n')}`
         : result.success ? 'No matches found.' : `Search failed.`}
     </Text>
   )
