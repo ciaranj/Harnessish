@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Text, Box, useApp, useInput, useStdout } from 'ink';
 import TextInput from 'ink-text-input';
 import { Message, Stats } from '../core/types.js';
-import { toolsDefinition } from '../tools/definitions.js';
+import { tools as defaultTools, toolsByName } from '../tools/index.js';
 import { LLAMACPP_HEALTH_URL } from '../constants.js';
 
 // --- UI Helpers ---
@@ -111,7 +111,7 @@ export const App = ({ makeCallToLLM }: AppProps) => {
     const [stats, setStats] = useState<Stats>({ tokens: 0, tps: 0, status: 'idle', contextSize: 0, cachedContextSize:0 });
     const [notification, setNotification] = useState<string | null>(null);
     const { exit } = useApp();
-    const [tools, setTools] = useState<any[]>(toolsDefinition);
+    const [tools, setTools] = useState(defaultTools);
 
     const [scrollOffset, setScrollOffset] = useState(0);
     const [isNavMode, setIsNavMode] = useState(false);
@@ -227,7 +227,7 @@ export const App = ({ makeCallToLLM }: AppProps) => {
         abortControllerRef.current = new AbortController();
         
         try {
-            const currentTools = tools.length > 0 ? tools : toolsDefinition;
+            const currentTools = tools.length > 0 ? [...tools] : [];
             await makeCallToLLM(value, updateMessages, messagesRef, currentTools, setStats, undefined, abortControllerRef.current.signal);
         } catch (e) {
             if (e instanceof Error && e.message === 'Aborted') setNotification("Turn abandoned.");

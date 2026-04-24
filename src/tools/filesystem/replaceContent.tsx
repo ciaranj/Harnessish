@@ -1,0 +1,60 @@
+import { readFile, writeFile } from 'node:fs/promises';
+import React from 'react';
+import { Text } from 'ink';
+import { Tool, ToolCallContext } from '../types.js';
+
+interface ReplaceContentArgs {
+  path: string;
+  search_string: string;
+  replacement_string: string;
+  replace_all?: boolean;
+  use_regex?: boolean;
+}
+
+type ReplaceResult = { success: boolean; message: string };
+
+export const replaceContent: Tool<ReplaceContentArgs, ReplaceResult> = {
+  name: "replace_content",
+  description: "Replaces a specific block of text in a file with new content. Supports regex patterns and replacing all occurrences.",
+  schema: {
+    type: "object",
+    properties: {
+      path: { type: "string", description: "The path to the file to edit." },
+      search_string: { type: "string", description: "The exact code snippet/block to find and replace, or regex pattern if use_regex is true." },
+      replacement_string: { type: "string", description: "The new code snippet/block to insert." },
+      replace_all: { type: "boolean", description: "If true, replaces all occurrences of search_string. If false, replaces only the first occurrence. Default is false.", default: false },
+      use_regex: { type: "boolean", description: "If true, treats search_string as a regex pattern. Default is false.", default: false }
+    },
+    required: ["path", "search_string", "replacement_string"]
+  } as const,
+  execute: async ({ path: p, search_string, replacement_string, replace_all = false, use_regex = false }: ReplaceContentArgs, _ctx?: ToolCallContext): Promise<ReplaceResult> => {
+    try {
+      const content = await readFile(p, 'utf-8');
+      if (use_regex) {
+        const regex = new RegExp(search_string, 'g');
+        const matches = content.match(regex);
+        if (!matches) return { success: false, message: `Error: Pattern "${search_string}" not found in "${p}".` };
+        const newContent = content.replace(regex, replacement_string);
+        await writeFile(p, newContent, 'utf-8');
+        const count = replace_all ? matches.length : 1;
+        return { success: true, message: `Successfully replaced ${count} occurrence(s) in ${p}` };
+      } else {
+        if (!content.includes(search_string)) return { success: false, message: `Error: Search string not found in "${p}".` };
+        const newContent = replace_all ? content.split(search_string).join(replacement_string) : content.replace(search_string, replacement_string);
+        await writeFile(p, newContent, 'utf-8');
+        const count = replace_all ? (content.split(search_string).length - 1) : 1;
+        return { success: true, message: `Successfully replaced ${count} occurrence(s) in ${p}` };
+      }
+    } catch (error: any) {
+      return { success: false, message: `Error: ${error.message}` };
+    }
+  },
+  renderCall: ({ path: p, search_string, replacement_string, use_regex, replace_all }: ReplaceContentArgs) => (
+    <Text color="cyan">
+      {p} | {use_regex ? "regex" : "literal"} | {replace_all ? "all" : "first"} | "{search_string.slice(0, 50)}..." → "{replacement_string.slice(0, 50)}..."
+    </Text>
+  ),
+  renderResult: (result: ReplaceResult) => (
+    <Text color={result.success ? "green" : "red"}>{result.message}</Text>
+  )
+};

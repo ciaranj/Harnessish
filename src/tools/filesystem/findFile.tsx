@@ -1,0 +1,63 @@
+import React from 'react';
+import { Text } from 'ink';
+import { Tool, ToolCallContext } from '../types.js';
+
+interface FindFileArgs {
+  pattern: string;
+  path?: string;
+}
+
+type FindFileResult = { success: boolean; files: string[] };
+
+export const findFile: Tool<FindFileArgs, FindFileResult> = {
+  name: "find_file",
+  description: "Finds files by name or pattern within a directory.",
+  schema: {
+    type: "object",
+    properties: {
+      pattern: { type: "string", description: "The filename or pattern to search for." },
+      path: { type: "string", description: "The directory to start the search from." }
+    },
+    required: ["pattern"]
+  } as const,
+  execute: async ({ pattern, path: startPath = '.' }: FindFileArgs, _ctx?: ToolCallContext): Promise<FindFileResult> => {
+    try {
+      const fs = await import('node:fs/promises');
+      const path = (await import('node:path')).default;
+
+      const globToRegex = (glob: string) => {
+        let regexStr = glob.replace(/[.+^${}()[\]\\]/g, '\\$&');
+        regexStr = regexStr.replace(/\*/g, '.*');
+        regexStr = regexStr.replace(/\?/g, '.');
+        return new RegExp(`^${regexStr}$`);
+      };
+      const patternRegex = globToRegex(pattern);
+      const results: string[] = [];
+
+      const walk = async (currentDir: string) => {
+        const entries = await fs.readdir(currentDir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(currentDir, entry.name);
+          if (entry.isDirectory()) await walk(fullPath);
+          else if (entry.isFile() && patternRegex.test(entry.name)) results.push(fullPath);
+        }
+      };
+
+      const absoluteStartPath = path.resolve(startPath);
+      await walk(absoluteStartPath);
+      return { success: true, files: results };
+    } catch (error: any) {
+      return { success: false, files: [] };
+    }
+  },
+  renderCall: ({ pattern, path: startPath }: FindFileArgs) => (
+    <Text color="cyan">find "{pattern}" in {startPath || '.'}</Text>
+  ),
+  renderResult: (result: FindFileResult) => (
+    <Text color="gray">
+      {result.success && result.files.length > 0
+        ? `${result.files.length} files found:\n${result.files.join('\n')}`
+        : result.success ? 'No files found.' : `Search failed.`}
+    </Text>
+  )
+};

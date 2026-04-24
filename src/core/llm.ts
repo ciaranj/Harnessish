@@ -4,9 +4,7 @@ import { appendFile } from 'node:fs/promises';
 import { Message, Stats } from './types.js';
 import { buildLLMPayload } from '../utils.js';
 import { LLAMACPP_CHAT_URL } from '../constants.js';
-import * as tools from '../tools/filesystem.js';
-import * as system from '../tools/system.js';
-import * as web from '../tools/web.js';
+import { toolsByName, toolsToOpenAITools } from '../tools/index.js';
 
 let mcpClient: any = null;
 let mcpTransport: any = null;
@@ -23,23 +21,16 @@ export async function connectToServer(url: string): Promise<boolean> {
 }
 
 export async function dispatchTool(name: string, args: any): Promise<string> {
-    if (name === 'python') return system.runPython(args.code);
-    if (name === 'read_files') return await tools.readFiles(args.paths);
-    if (name === 'write_to_file') return await tools.writeLocalFile(args.path, args.content, args.mode || 'overwrite');
-    if (name === 'replace_content') return await tools.replaceContentLocal(args.path, args.search_string, args.replacement_string, args.replace_all, args.use_regex);
-    if (name === 'get_git_diff') return await system.getGitDiff(args.path, args.staged);
-    if (name === 'get_file_tree') return await tools.getFileTree(args.path, args.max_depth, args.ignore_patterns);
-    if (name === 'grep_file') return await system.grepFile(args.path, args.pattern);
-    if (name === 'find_file') return await system.findFile(args.pattern, args.path);
-    if (name === 'search_web') return await web.searchWeb(args.query);
-    if (name === 'fetch_url') return await web.fetchUrl(args.url);
-    if (name === 'search_code') return await system.searchCode(args.pattern, args.path);
- 
+    const tool = toolsByName[name];
+    if (tool) {
+        const result = await tool.execute(args);
+        return typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+    }
     if (mcpClient) {
         const result = await mcpClient.callTool({ name, arguments: args });
         return JSON.stringify(result.content);
     }
-    return "Error: MCP client not connected";
+    return "Error: Tool not found and MCP client not connected";
 }
 
 export async function makeCallToLLM(
@@ -59,7 +50,7 @@ export async function makeCallToLLM(
     const startTime = Date.now();
     let tokenCount = 0;
 
-    const payload = buildLLMPayload(messagesRef.current, tools);
+    const payload = buildLLMPayload(messagesRef.current, toolsToOpenAITools(tools));
     const body = JSON.stringify(payload);
 
     const res = await fetch(`${LLAMACPP_CHAT_URL}`, {
