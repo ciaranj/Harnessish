@@ -1,9 +1,19 @@
 import { readFile, writeFile, readdir, appendFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
-export async function readLocalFile(path: string): Promise<string> {
-    try { return await readFile(path, 'utf-8'); }
-    catch (error: any) { return `Error reading file at "${path}": ${error.message}`; }
+export async function readFiles(paths: string[]): Promise<string> {
+    if (paths.length === 0) return '[]';
+
+    const results: Array<{ path: string; success: boolean; content?: string; error?: string }> = [];
+    for (const p of paths) {
+        try {
+            const content = await readFile(p, 'utf-8');
+            results.push({ path: p, success: true, content });
+        } catch (error: any) {
+            results.push({ path: p, success: false, error: error.message });
+        }
+    }
+    return JSON.stringify(results, null, 2);
 }
 
 export async function writeLocalFile(path: string, content: string): Promise<string> {

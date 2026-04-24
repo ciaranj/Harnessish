@@ -1,14 +1,15 @@
 export const toolsDefinition: any[] = [
     {
-        "type":"function",
-        "function":{
-            "name":"read_from_file",
-            "description":"Read the contents of a file and return it to the context",
+        "type": "function",
+        "function": {
+            "name": "read_files",
+            "description": "Read the contents of one or more files and return them in a single call.",
             "parameters": {
-                "type":"object",
+                "type": "object",
                 "properties": {
-                    "path": { "type":"string", "description":"The path to the file that needs reading" }
-                }
+                    "paths": { "type": "array", "items": { "type": "string" }, "description": "List of file paths to read." }
+                },
+                "required": ["paths"]
             }
         }
     },
