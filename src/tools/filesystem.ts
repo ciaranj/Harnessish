@@ -16,14 +16,17 @@ export async function readFiles(paths: string[]): Promise<string> {
     return JSON.stringify(results, null, 2);
 }
 
-export async function writeLocalFile(path: string, content: string): Promise<string> {
-    try { await writeFile(path, content, 'utf-8'); return `Successfully wrote to ${path}`; }
-    catch (error: any) { return `Error writing to file at "${path}": ${error.message}`; }
-}
-
-export async function appendLocalFile(path: string, content: string): Promise<string> {
-    try { await appendFile(path, content, 'utf-8'); return `Successfully appended to ${path}`; }
-    catch (error: any) { return `Error: ${error.message}`; }
+export async function writeLocalFile(path: string, content: string, mode: 'overwrite' | 'append' = 'overwrite'): Promise<string> {
+    try {
+        if (mode === 'append') {
+            await appendFile(path, content, 'utf-8');
+            return `Successfully appended to ${path}`;
+        }
+        await writeFile(path, content, 'utf-8');
+        return `Successfully wrote to ${path}`;
+    } catch (error: any) {
+        return `Error writing to file at "${path}": ${error.message}`;
+    }
 }
 
 export async function replaceContentLocal(path: string, searchString: string, replacementString: string, replaceAll = false, useRegex = false): Promise<string> {

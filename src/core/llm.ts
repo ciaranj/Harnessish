@@ -25,9 +25,8 @@ export async function connectToServer(url: string): Promise<boolean> {
 export async function dispatchTool(name: string, args: any): Promise<string> {
     if (name === 'python') return system.runPython(args.code);
     if (name === 'read_files') return await tools.readFiles(args.paths);
-    if (name === 'write_to_file') return await tools.writeLocalFile(args.path, args.content);
+    if (name === 'write_to_file') return await tools.writeLocalFile(args.path, args.content, args.mode || 'overwrite');
     if (name === 'replace_content') return await tools.replaceContentLocal(args.path, args.search_string, args.replacement_string, args.replace_all, args.use_regex);
-    if (name === 'append_to_file') return await tools.appendLocalFile(args.path, args.content);
     if (name === 'get_git_diff') return await system.getGitDiff(args.path, args.staged);
     if (name === 'get_file_tree') return await tools.getFileTree(args.path, args.max_depth, args.ignore_patterns);
     if (name === 'grep_file') return await system.grepFile(args.path, args.pattern);

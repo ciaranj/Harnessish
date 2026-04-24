@@ -17,27 +17,15 @@ export const toolsDefinition: any[] = [
         "type": "function",
         "function": {
             "name": "write_to_file",
-            "description": "Creates a new file or overwrites an existing file with the provided content.",
+            "description": "Creates a new file or overwrites an existing file with the provided content. Use mode='append' to append to an existing file.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": { "type": "string", "description": "The path to the file to write." },
-                    "content": { "type": "string", "description": "The full content to write into the file." }
-                },
-                "required": ["path", "content"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "append_to_file",
-            "description": "Appends content to the end of an existing file.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": { "type": "string", "description": "The path to the file to append to." },
-                    "content": { "type": "string", "description": "The content to append." }
+                    "content": { "type": "string", "description": "The full content to write into the file." },
+                    "mode": { "type": "string", "enum": ["overwrite", "append"], "description": "Whether to overwrite or append to an existing file. Default is 'overwrite'.",
+                        "default": "overwrite"
+                    }
                 },
                 "required": ["path", "content"]
             }
