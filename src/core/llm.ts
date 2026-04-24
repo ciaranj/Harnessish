@@ -35,7 +35,7 @@ export async function dispatchTool(name: string, args: any): Promise<string> {
     if (name === 'search_web') return await web.searchWeb(args.query);
     if (name === 'fetch_url') return await web.fetchUrl(args.url);
     if (name === 'search_code') return await system.searchCode(args.pattern, args.path);
-    if (name === 'list_directory') return await tools.listDirectory(args.path);
+ 
     if (mcpClient) {
         const result = await mcpClient.callTool({ name, arguments: args });
         return JSON.stringify(result.content);

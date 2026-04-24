@@ -1,4 +1,4 @@
-import { readFile, writeFile, readdir, appendFile } from 'node:fs/promises';
+import { readFile, writeFile, readdir, appendFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 export async function readLocalFile(path: string): Promise<string> {
@@ -25,15 +25,17 @@ export async function replaceContentLocal(path: string, searchString: string, re
     } catch (error: any) { return `Error: ${error.message}`; }
 }
 
-export async function listDirectory(dirPath: string): Promise<string> {
-    try {
-        const files = await readdir(dirPath, { withFileTypes: true });
-        return files.map(f => `${f.isDirectory() ? '[DIR]' : '[FILE]'} ${f.name}`).join('\n') || "Empty.";
-    } catch (error: any) { return `Error: ${error.message}`; }
-}
+
 
 export async function getFileTree(dirPath: string, maxDepth: number = 3, ignorePatterns: string[] = ['node_modules', '.git', 'build', 'dist']): Promise<string> {
     try {
+        const formatSize = (bytes: number): string => {
+            if (bytes < 1024) return `${bytes}B`;
+            if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+            if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+            return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)}GB`;
+        };
+
         async function build(p: string, currentDepth: number, indent = ""): Promise<string> {
             if (currentDepth > maxDepth) return "";
             let entries;
@@ -50,8 +52,17 @@ export async function getFileTree(dirPath: string, maxDepth: number = 3, ignoreP
             for (const e of sortedEntries) {
                 if (ignorePatterns.some(pattern => e.name === pattern || e.name.startsWith(pattern + '/'))) continue;
                 const fp = path.join(p, e.name);
-                tree += `${indent}${e.isDirectory() ? '[DIR]' : '[FILE]'} ${e.name}\n`;
-                if (e.isDirectory()) { tree += await build(fp, currentDepth + 1, indent + "  "); }
+                try {
+                    const stats = await stat(fp);
+                    if (e.isDirectory()) {
+                        tree += `${indent}[DIR] ${e.name}\n`;
+                        tree += await build(fp, currentDepth + 1, indent + "  ");
+                    } else {
+                        tree += `${indent}[FILE ${formatSize(stats.size)}] ${e.name}\n`;
+                    }
+                } catch (err: any) {
+                    tree += `${indent}[FILE ?] ${e.name}\n`;
+                }
             }
             return tree;
         }

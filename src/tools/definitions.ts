@@ -114,20 +114,7 @@ export const toolsDefinition: any[] = [
             }
         }
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_directory",
-            "description": "Lists the files and directories in a given path.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": { "type": "string", "description": "The directory path to list." }
-                },
-                "required": ["path"]
-            }
-        }
-    },
+ 
     {
         "type": "function",
         "function": {
