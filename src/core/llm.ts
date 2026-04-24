@@ -26,7 +26,7 @@ export async function dispatchTool(name: string, args: any): Promise<string> {
     if (name === 'python') return system.runPython(args.code);
     if (name === 'read_from_file') return await tools.readLocalFile(args.path);
     if (name === 'write_to_file') return await tools.writeLocalFile(args.path, args.content);
-    if (name === 'replace_content') return await tools.replaceContentLocal(args.path, args.search_string, args.replacement_string);
+    if (name === 'replace_content') return await tools.replaceContentLocal(args.path, args.search_string, args.replacement_string, args.replace_all, args.use_regex);
     if (name === 'append_to_file') return await tools.appendLocalFile(args.path, args.content);
     if (name === 'get_git_diff') return await system.getGitDiff(args.path, args.staged);
     if (name === 'get_file_tree') return await tools.getFileTree(args.path, args.max_depth, args.ignore_patterns);

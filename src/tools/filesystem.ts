@@ -16,12 +16,26 @@ export async function appendLocalFile(path: string, content: string): Promise<st
     catch (error: any) { return `Error: ${error.message}`; }
 }
 
-export async function replaceContentLocal(path: string, searchString: string, replacementString: string): Promise<string> {
+export async function replaceContentLocal(path: string, searchString: string, replacementString: string, replaceAll = false, useRegex = false): Promise<string> {
     try {
         const content = await readFile(path, 'utf-8');
-        if (!content.includes(searchString)) return `Error: Search string not found in "${path}".`;
-        await writeFile(path, content.replace(searchString, replacementString), 'utf-8');
-        return `Successfully replaced content in ${path}`;
+        let matches: RegExpMatchArray | null;
+        
+        if (useRegex) {
+            const regex = new RegExp(searchString, 'g');
+            matches = content.match(regex);
+            if (!matches) return `Error: Pattern "${searchString}" not found in "${path}".`;
+            const newContent = content.replace(regex, replacementString);
+            await writeFile(path, newContent, 'utf-8');
+            const count = replaceAll ? matches.length : 1;
+            return `Successfully replaced ${count} occurrence(s) in ${path}`;
+        } else {
+            if (!content.includes(searchString)) return `Error: Search string not found in "${path}".`;
+            const newContent = replaceAll ? content.split(searchString).join(replacementString) : content.replace(searchString, replacementString);
+            await writeFile(path, newContent, 'utf-8');
+            const count = (content.split(searchString).length - 1);
+            return `Successfully replaced ${replaceAll ? count : 1} occurrence(s) in ${path}`;
+        }
     } catch (error: any) { return `Error: ${error.message}`; }
 }
 

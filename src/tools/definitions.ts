@@ -46,13 +46,15 @@ export const toolsDefinition: any[] = [
         "type": "function",
         "function": {
             "name": "replace_content",
-            "description": "Replaces a specific block of text in a file with new content. This is more reliable than using line numbers.",
+            "description": "Replaces a specific block of text in a file with new content. Supports regex patterns and replacing all occurrences.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": { "type": "string", "description": "The path to the file to edit." },
-                    "search_string": { "type": "string", "description": "The exact code snippet/block to find and replace." },
-                    "replacement_string": { "type": "string", "description": "The new code snippet/block to insert." }
+                    "search_string": { "type": "string", "description": "The exact code snippet/block to find and replace, or regex pattern if use_regex is true." },
+                    "replacement_string": { "type": "string", "description": "The new code snippet/block to insert." },
+                    "replace_all": { "type": "boolean", "description": "If true, replaces all occurrences of search_string. If false, replaces only the first occurrence. Default is false.", "default": false },
+                    "use_regex": { "type": "boolean", "description": "If true, treats search_string as a regex pattern. Default is false.", "default": false }
                 },
                 "required": ["path", "search_string", "replacement_string"]
             }
