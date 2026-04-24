@@ -76,14 +76,14 @@ function getRenderLines(messages: Message[], width: number): RenderLine[] {
                 lines.push({ content: l, isHeader: false, role: msg.role, isReasoning: true });
             }
         }
-        if (msg.tool_calls && msg.tool_calls.length > 0) {
-            const toolNames = msg.tool_calls.map((tc: any) => tc.function?.name || tc.name).join(', ');
-            lines.push({ content: `→ Tools: ${toolNames}`, isHeader: false, role: msg.role, isReasoning: false });
-        }
         if (msg.content) {
             for (const l of wrapText(msg.content, width)) {
                 lines.push({ content: l, isHeader: false, role: msg.role, isReasoning: false });
             }
+        }
+        if (msg.tool_calls && msg.tool_calls.length > 0) {
+            const toolNames = msg.tool_calls.map((tc: any) => tc.function?.name || tc.name).join(', ');
+            lines.push({ content: `🛠️ ${toolNames}`, isHeader: false, role: msg.role, isReasoning: false });
         }
     }
     return lines;
