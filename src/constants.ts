@@ -2,8 +2,8 @@ import { loadEnvFile } from 'node:process';
 
 loadEnvFile();
 
-export const OLLAMA_HEALTH_URL = new URL('/health', process.env.OLLAMA_URL!);
-export const OLLAMA_CHAT_URL = new URL('/v1/chat/completions', process.env.OLLAMA_URL!);
+export const LLAMACPP_HEALTH_URL = new URL('/health', process.env.LLAMACPP_URL!);
+export const LLAMACPP_CHAT_URL = new URL('/v1/chat/completions', process.env.LLAMACPP_URL!);
 export const SEARXNG_URL = process.env.SEARXNG_URL;
 
 export const systemPrompt = `**ROLE:** Elite Frontend Coder

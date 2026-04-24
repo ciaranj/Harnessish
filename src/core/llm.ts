@@ -3,7 +3,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { appendFile } from 'node:fs/promises';
 import { Message, Stats } from './types.js';
 import { buildLLMPayload } from '../utils.js';
-import { OLLAMA_CHAT_URL } from '../constants.js';
+import { LLAMACPP_CHAT_URL } from '../constants.js';
 import * as tools from '../tools/filesystem.js';
 import * as system from '../tools/system.js';
 import * as web from '../tools/web.js';
@@ -63,7 +63,7 @@ export async function makeCallToLLM(
     const payload = buildLLMPayload(messagesRef.current, tools);
     const body = JSON.stringify(payload);
 
-    const res = await fetch(`${OLLAMA_CHAT_URL}`, {
+    const res = await fetch(`${LLAMACPP_CHAT_URL}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: body,

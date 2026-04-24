@@ -3,7 +3,7 @@ import { Text, Box, useApp, useInput, useStdout } from 'ink';
 import TextInput from 'ink-text-input';
 import { Message, Stats } from '../core/types.js';
 import { toolsDefinition } from '../tools/definitions.js';
-import { OLLAMA_HEALTH_URL } from '../constants.js';
+import { LLAMACPP_HEALTH_URL } from '../constants.js';
 
 // --- UI Helpers ---
 
@@ -189,7 +189,7 @@ export const App = ({ makeCallToLLM }: AppProps) => {
 
     useEffect(() => {
         const init = async () => {
-            const healthy = await fetch(OLLAMA_HEALTH_URL).then(r => r.ok).catch(() => false);
+            const healthy = await fetch(LLAMACPP_HEALTH_URL).then(r => r.ok).catch(() => false);
             if (!healthy) console.log("Ollama not found.");
         };
         init();

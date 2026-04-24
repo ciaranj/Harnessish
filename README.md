@@ -36,7 +36,7 @@ It is currently configured to work with **[llama-cpp](https://github.com/ggml-or
 Create a `.env` file in the root directory based on the `.env.example` template:
 
 ```env
-OLLAMA_URL=http://localhost:11434/api
+LLAMACPP_URL=http://localhost:8080/
 MODEL=gemma3
 SEARXNG_URL=http://localhost:8888/
 ```
