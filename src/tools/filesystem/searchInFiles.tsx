@@ -32,7 +32,12 @@ export const searchInFiles: Tool<SearchInFilesArgs, SearchInFilesResult> = {
       const truncated = lines.length > 50;
       return { success: true, matches: truncated ? lines.slice(0, 50) : lines, truncated };
     } catch (error: any) {
-      return { success: false, matches: [], truncated : false };
+      if( error.code == 1 ) {
+        // error code of 1 means no matches were found.
+        return { success: true, matches: [], truncated : false };
+      } else {
+        return { success: false, matches: [], truncated : false };
+      }
     }
   },
   renderCall: ({ pattern, path: searchPath }: SearchInFilesArgs) => (
