@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { getFileTree } from './getFileTree.js';
-import { writeFile, mkdir, unlink, rmdir } from 'node:fs/promises';
+import { writeFile, mkdir, unlink, rm } from 'node:fs/promises';
 
 describe('getFileTree', () => {
     const testDir = 'test_tree_root';
@@ -11,7 +11,7 @@ describe('getFileTree', () => {
     });
 
     afterEach(async () => {
-        try { await rmdir(testDir, { recursive: true, force: true }); } catch { /* ignore */ }
+        try { await rm(testDir, { recursive: true, force: true }); } catch { /* ignore */ }
     });
 
     it('should return an empty tree for an empty directory', async () => {

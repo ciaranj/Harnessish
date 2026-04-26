@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { findFile } from './findFile.js';
-import { writeFile, mkdir, unlink, rmdir } from 'node:fs/promises';
+import { writeFile, mkdir, rm } from 'node:fs/promises';
 import path from 'node:path'
 describe('findFile', () => {
     const testDir = 'test_find_root';
@@ -11,7 +11,7 @@ describe('findFile', () => {
     });
 
     afterEach(async () => {
-        try { await rmdir(testDir); } catch { /* ignore */ }
+        try { await rm(testDir, { recursive: true, force: true }); } catch { /* ignore */ }
     });
 
     it('should find a file by exact name', async () => {

@@ -24,7 +24,8 @@ export const getFileTree: Tool<GetFileTreeArgs, FileTreeResult> = {
     },
     required: ["path"]
   } as const,
-  execute: async ({ path: dirPath, max_depth = 3, ignore_patterns = ['node_modules', '.git', 'build', 'dist'] }: GetFileTreeArgs, _ctx?: ToolCallContext): Promise<FileTreeResult> => {
+  execute: async (args: GetFileTreeArgs, _ctx?: ToolCallContext): Promise<FileTreeResult> => {
+    const { path: dirPath, max_depth = 3, ignore_patterns = ['node_modules', '.git', 'build', 'dist'] } = args;
     try {
       const formatSize = (bytes: number): string => {
         if (bytes < 1024) return `${bytes}B`;
