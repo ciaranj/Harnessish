@@ -10,7 +10,12 @@ interface GetFileTreeArgs {
   ignore_patterns?: string[];
 }
 
-type FileTreeResult = { success: boolean; tree: string };
+type FileTreeResult = {
+  success: boolean;
+  tree?: string;
+  max_depth?:number;
+  failure_reason?: string;
+};
 
 export const getFileTree: Tool<GetFileTreeArgs, FileTreeResult> = {
   name: "get_file_tree",
@@ -19,13 +24,13 @@ export const getFileTree: Tool<GetFileTreeArgs, FileTreeResult> = {
     type: "object",
     properties: {
       path: { type: "string", description: "The root path to generate the tree from." },
-      max_depth: { type: "number", description: "Maximum depth to recurse." },
+      max_depth: { type: "number", description: "Maximum depth to recurse, defaults to 3." },
       ignore_patterns: { type: "array", items: { type: "string" }, description: "List of directory names to ignore." }
     },
     required: ["path"]
   } as const,
   execute: async (args: GetFileTreeArgs, _ctx?: ToolCallContext): Promise<FileTreeResult> => {
-    const { path: dirPath, max_depth = 3, ignore_patterns = ['node_modules', '.git', 'build', 'dist'] } = args;
+    const { path: dirPath, max_depth = 3, ignore_patterns = ['.h', 'node_modules', '.git', 'build', 'dist'] } = args;
     try {
       const formatSize = (bytes: number): string => {
         if (bytes < 1024) return `${bytes}B`;
@@ -65,9 +70,9 @@ export const getFileTree: Tool<GetFileTreeArgs, FileTreeResult> = {
         return tree;
       };
       const tree = await build(dirPath, 0, ignore_patterns);
-      return { success: true, tree };
+      return { success: true, tree, max_depth };
     } catch (error: any) {
-      return { success: false, tree: `Error: ${error.message}` };
+      return { success: false, failure_reason: `Error: ${error.message}` };
     }
   },
   renderCall: ({ path: p, max_depth }: GetFileTreeArgs) => (
