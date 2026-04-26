@@ -16,12 +16,24 @@ export type Session = {
     stats?: SessionStats;
 };
 
+const SESSION_DIRNAME = '.h/sessions';
 const SESSION_FILENAME = 'session.json';
 const BACKUP_SUFFIX = '.bak';
 const TEMP_SUFFIX = '.tmp';
 
+async function ensureSessionDir(directory: string): Promise<void> {
+    const sessionDir = path.join(directory, SESSION_DIRNAME);
+    if (!fs.existsSync(sessionDir)) {
+        await fs.promises.mkdir(sessionDir, { recursive: true });
+    }
+}
+
 function getSessionFilePath(directory: string = process.cwd()): string {
-    return path.join(directory, SESSION_FILENAME);
+    return path.join(directory, SESSION_DIRNAME, SESSION_FILENAME);
+}
+
+function getLegacySessionFilePath(directory: string = process.cwd()): string {
+    return path.join(directory, 'session.json');
 }
 
 export function createSession(directory: string = process.cwd()): Session {
@@ -77,9 +89,28 @@ async function loadBackupFromFile(filePath: string): Promise<Session | null> {
 export async function loadSession(directory: string = process.cwd()): Promise<Session | null> {
     const filePath = getSessionFilePath(directory);
     
+    await ensureSessionDir(directory);
+    
     let session = await loadSessionFromFile(filePath);
     if (session) {
         return session;
+    }
+    
+    const legacyPath = getLegacySessionFilePath(directory);
+    if (fs.existsSync(legacyPath)) {
+        try {
+            const data = fs.readFileSync(legacyPath, 'utf-8');
+            const parsed = JSON.parse(data);
+            if (parsed.id && parsed.createdAt && parsed.updatedAt && parsed.version !== undefined && Array.isArray(parsed.messages)) {
+                await ensureSessionDir(directory);
+                fs.writeFileSync(filePath, data);
+                fs.unlinkSync(legacyPath);
+                console.log('Migrated session from session.json to .h/sessions/');
+                return parsed as Session;
+            }
+        } catch (err) {
+            console.error(`Failed to migrate legacy session: ${err}`);
+        }
     }
     
     const backupSession = await loadBackupFromFile(filePath);
@@ -94,6 +125,8 @@ export async function loadSession(directory: string = process.cwd()): Promise<Se
 export async function saveSession(session: Session, directory: string = process.cwd()): Promise<void> {
     const filePath = getSessionFilePath(directory);
     const tempPath = filePath + TEMP_SUFFIX;
+    
+    await ensureSessionDir(directory);
     
     session.updatedAt = new Date().toISOString();
     session.version += 1;
