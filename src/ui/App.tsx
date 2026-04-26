@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Text, Box, useApp, useInput, useStdout } from 'ink';
 import TextInput from 'ink-text-input';
 import { Message, Stats } from '../core/types.js';
+import { SessionStats, Session, saveSession, loadSession } from '../core/session.js';
 import { tools as defaultTools, toolsByName } from '../tools/index.js';
 import { LLAMACPP_HEALTH_URL } from '../constants.js';
 
@@ -98,20 +99,27 @@ interface AppProps {
         messagesRef: React.MutableRefObject<Message[]>,
         tools: any[],
         setStats: React.Dispatch<React.SetStateAction<Stats>>,
+        session: any,
+        saveSessionCallback: (session: any) => Promise<void>,
         depth?: number,
         signal?: AbortSignal
     ) => Promise<void>;
+    initialMessages: Message[];
+    initialSessionId: string;
+    initialStats?: SessionStats;
 }
 
-export const App = ({ makeCallToLLM }: AppProps) => {
-    const [messages, setMessages] = useState<Message[]>([]);
-    const messagesRef = useRef<Message[]>([]);
+export const App = ({ makeCallToLLM, initialMessages, initialSessionId, initialStats }: AppProps) => {
+    const [messages, setMessages] = useState<Message[]>(initialMessages);
+    const messagesRef = useRef<Message[]>(initialMessages);
     const [input, setInput] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
-    const [stats, setStats] = useState<Stats>({ tokens: 0, tps: 0, status: 'idle', contextSize: 0, cachedContextSize:0 });
+    const [stats, setStats] = useState<Stats>((initialStats ? {tokens:0, tps: 0, status: 'idle', contextSize: initialStats.contextSize, cachedContextSize: 0} : null) || { tokens: 0, tps: 0, status: 'idle', contextSize: 0, cachedContextSize:0 });
     const [notification, setNotification] = useState<string | null>(null);
     const { exit } = useApp();
     const [tools, setTools] = useState(defaultTools);
+    const [sessionId, setSessionId] = useState(initialSessionId);
+    const [sessionCreatedAt, setSessionCreatedAt] = useState(initialMessages.length > 0 ? new Date().toISOString() : new Date().toISOString());
 
     const [scrollOffset, setScrollOffset] = useState(0);
     const [isNavMode, setIsNavMode] = useState(false);
@@ -199,7 +207,13 @@ export const App = ({ makeCallToLLM }: AppProps) => {
         if (!value.trim() || isProcessing || isConfirmingCancel) return;
         if (value === '/exit') { exit(); return; }
         if (value === '/reset') { 
-            updateMessages(() => []); setIsProcessing(false); setStats({ tokens: 0, tps: 0, status: 'idle', contextSize: 0, cachedContextSize:0 });
+            const { resetSession } = await import('../core/session.js');
+            const newSession = await resetSession();
+            setSessionId(newSession.id);
+            setSessionCreatedAt(newSession.createdAt);
+            updateMessages(() => []); 
+            setIsProcessing(false);
+            setStats({ tokens: 0, tps: 0, status: 'idle', contextSize: 0, cachedContextSize:0 });
             setInput('');
             return;
         }
@@ -228,7 +242,9 @@ export const App = ({ makeCallToLLM }: AppProps) => {
         
         try {
             const currentTools = tools.length > 0 ? [...tools] : [];
-            await makeCallToLLM(value, updateMessages, messagesRef, currentTools, setStats, undefined, abortControllerRef.current.signal);
+            const existingSession = await loadSession();
+            const currentSession: Session = { id: sessionId as string, createdAt: sessionCreatedAt as string, updatedAt: new Date().toISOString(), version: existingSession ? existingSession.version : 0, messages: messagesRef.current, stats: { contextSize: stats.contextSize } };
+            await makeCallToLLM(value, updateMessages, messagesRef, currentTools, setStats, currentSession, saveSession, undefined, abortControllerRef.current.signal);
         } catch (e) {
             if (e instanceof Error && e.message === 'Aborted') setNotification("Turn abandoned.");
             else console.log("Error:", e);

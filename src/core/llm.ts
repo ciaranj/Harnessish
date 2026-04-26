@@ -1,7 +1,7 @@
 import React from 'react';
 import { StringDecoder } from 'node:string_decoder';
-import { appendFile } from 'node:fs/promises';
 import { Message, Stats } from './types.js';
+import { Session, saveSession } from './session.js';
 import { buildLLMPayload } from '../utils.js';
 import { LLAMACPP_CHAT_URL } from '../constants.js';
 import { toolsByName, toolsToOpenAITools } from '../tools/index.js';
@@ -39,6 +39,8 @@ export async function makeCallToLLM(
     messagesRef: React.MutableRefObject<Message[]>,
     tools: any[],
     setStats: React.Dispatch<React.SetStateAction<Stats>>,
+    session: Session,
+    saveSessionCallback: (session: Session) => Promise<void>,
     depth: number = 0,
     signal?: AbortSignal
 ) {
@@ -52,6 +54,9 @@ export async function makeCallToLLM(
 
     const payload = buildLLMPayload(messagesRef.current, toolsToOpenAITools(tools));
     const body = JSON.stringify(payload);
+
+    session.messages = messagesRef.current;
+    await saveSession(session);
 
     const res = await fetch(`${LLAMACPP_CHAT_URL}`, {
         method: 'POST',
@@ -127,14 +132,13 @@ export async function makeCallToLLM(
                     });
                     
                     setStats(prev => ({ ...prev, status: 'tool_running' }));
-                    await appendFile("prompts.txt", "----\n EXECUTING " +  toolCalls.length + " tools: " + JSON.stringify(toolCalls)+ "\n---\n", 'utf-8');
 
                     for (const tc of toolCalls) {
                         const args = JSON.parse(tc.function.arguments);
                         const result = await dispatchTool(tc.function.name, args);
                         updateMessages(msgs => [...msgs, { role: 'tool', tool_call_id: tc.id, content: String(result) }]);
                     }
-                    await makeCallToLLM(undefined, updateMessages, messagesRef, tools, setStats, depth + 1, signal);
+                    await makeCallToLLM(undefined, updateMessages, messagesRef, tools, setStats, session, saveSessionCallback, depth + 1, signal);
                 }
             }
         }
@@ -142,5 +146,8 @@ export async function makeCallToLLM(
         if (signal?.aborted) throw new Error("Aborted");
         throw e;
     }
+
+    session.messages = messagesRef.current;
+    await saveSession(session);
     setStats(prev => ({ ...prev, status: 'idle' }));
 }

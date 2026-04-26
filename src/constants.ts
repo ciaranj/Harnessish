@@ -5,6 +5,8 @@ loadEnvFile();
 export const LLAMACPP_HEALTH_URL = new URL('/health', process.env.LLAMACPP_URL!);
 export const LLAMACPP_CHAT_URL = new URL('/v1/chat/completions', process.env.LLAMACPP_URL!);
 export const SEARXNG_URL = process.env.SEARXNG_URL;
+export const MAX_CONTEXT_SIZE = parseInt(process.env.MAX_CONTEXT_SIZE || '262144', 10);
+export const AUTO_COMPACTION_THRESHOLD = parseFloat(process.env.AUTO_COMPACTION_THRESHOLD || '0.8');
 
 export const systemPrompt = `**ROLE:** Elite Frontend Coder
 Architect & UI/UX Visionary.
