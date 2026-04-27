@@ -43,135 +43,148 @@ export async function makeCallToLLM(
     session: Session,
     saveSessionCallback: (session: Session) => Promise<void>,
     compactionStrategy: CompactionStrategy,
-    depth: number = 0,
     signal?: AbortSignal
 ) {
-    if (depth > 100) throw new Error("Too many loops");
-    if (message) updateMessages(msgs => [...msgs, { role: 'user', content: message }]);
+    let loopCount = 0;
+    const maxLoops = 100;
     
-    let currentStats: Stats = { tokens: 0, tps: 0, status: 'sending', contextSize: 0, cachedContextSize: 0 };
-    setStats((prev) => {
-        currentStats = { ...prev, tokens: 0, tps: 0, status: 'sending' as const };
-        return currentStats;
-    });
+    while (loopCount < maxLoops) {
+        loopCount++;
+        
+        if (message) updateMessages(msgs => [...msgs, { role: 'user', content: message }]);
+        message = undefined;
+        
+        let currentStats: Stats = { tokens: 0, tps: 0, status: 'sending', contextSize: 0, cachedContextSize: 0 };
+        setStats((prev) => {
+            currentStats = { ...prev, tokens: 0, tps: 0, status: 'sending' as const };
+            return currentStats;
+        });
 
-    const startTime = Date.now();
-    let tokenCount = 0;
+        const startTime = Date.now();
+        let tokenCount = 0;
 
-    const payload = buildLLMPayload(messagesRef.current, toolsToOpenAITools(tools));
-    const body = JSON.stringify(payload);
+        const payload = buildLLMPayload(messagesRef.current, toolsToOpenAITools(tools));
+        const body = JSON.stringify(payload);
 
-    session.messages = messagesRef.current;
-    session.stats = {contextSize : currentStats.contextSize };
-    await saveSession(session);
+        session.messages = messagesRef.current;
+        session.stats = {contextSize : currentStats.contextSize };
+        await saveSession(session);
 
-    const res = await fetch(`${LLAMACPP_CHAT_URL}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: body,
-        signal
-    });
+        const res = await fetch(`${LLAMACPP_CHAT_URL}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: body,
+            signal
+        });
 
-    if (res.status !== 200) throw new Error(`LLM error: ${res.status}`);
+        if (res.status !== 200) throw new Error(`LLM error: ${res.status}`);
 
-    let buffer = "";
-    const decoder = new StringDecoder('utf8');
-    let response = "";
-    const toolCalls: any[] = [];
+        let buffer = "";
+        const decoder = new StringDecoder('utf8');
+        let response = "";
+        const toolCalls: any[] = [];
 
-    if (!res.body) throw new Error("No response body");
+        if (!res.body) throw new Error("No response body");
 
-    try {
-        for await (const chunk of res.body) {
-            if (signal?.aborted) throw new Error("Aborted");
-            buffer += decoder.write(chunk);
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || "";
+        let didToolCall = false;
 
-            for (const line of lines) {
-                if (!line.trim()) continue;
-                const data = line.startsWith('data: ') ? line.slice(6) : line;
-                if (data === '[DONE]') break;
+        try {
+            for await (const chunk of res.body) {
+                if (signal?.aborted) throw new Error("Aborted");
+                buffer += decoder.write(chunk);
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || "";
 
-                const payload = JSON.parse(data);
-                if( payload.timings && payload.timings.prompt_n !== undefined ) {
-                    currentStats = { ...currentStats, contextSize: payload.timings.prompt_n + payload.timings.cache_n, cachedContextSize: payload.timings.cache_n };
-                    setStats(currentStats);
-                }
-                const delta = payload.choices[0].delta;
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    const data = line.startsWith('data: ') ? line.slice(6) : line;
+                    if (data === '[DONE]') break;
 
-                tokenCount++;
-                const elapsedSeconds = (Date.now() - startTime) / 1000;
-                const tps = elapsedSeconds > 0 ? tokenCount / elapsedSeconds : 0;
-
-                if (delta.reasoning_content) {
-                    currentStats = { ...currentStats, tokens: tokenCount, tps: 0, status: 'thinking' as const };
-                    setStats(currentStats);
-                    const token = delta.reasoning_content;
-                    updateMessages(msgs => {
-                        const last = msgs[msgs.length - 1];
-                        if (last && last.role === 'assistant') return [...msgs.slice(0, -1), { ...last, reasoning_content: (last.reasoning_content || '') + token }];
-                        return [...msgs, { role: 'assistant', content: '', reasoning_content: token }];
-                    });
-                }
-
-                if (delta.tool_calls) {
-                    currentStats = { ...currentStats, tokens: tokenCount, tps, status: 'tool_calling' as const };
-                    setStats(currentStats);
-                    for (const tc of delta.tool_calls) {
-                        if (!toolCalls[tc.index]) toolCalls[tc.index] = { id: tc.id, type: tc.type, function: { name: tc.function.name, arguments: '' } };
-                        toolCalls[tc.index].function.arguments += tc.function.arguments ?? '';
+                    const payload = JSON.parse(data);
+                    if( payload.timings && payload.timings.prompt_n !== undefined ) {
+                        currentStats = { ...currentStats, contextSize: payload.timings.prompt_n + payload.timings.cache_n, cachedContextSize: payload.timings.cache_n };
+                        setStats(currentStats);
                     }
-                }
+                    const delta = payload.choices[0].delta;
 
-                if (delta.content) {
-                    currentStats = { ...currentStats, tokens: tokenCount, tps, status: 'generating' as const };
-                    setStats(currentStats);
-                    const token = delta.content;
-                    response += token;
-                    updateMessages(msgs => {
-                        const last = msgs[msgs.length - 1];
-                        if (last && last.role === 'assistant') return [...msgs.slice(0, -1), { ...last, content: last.content + token }];
-                        return [...msgs, { role: 'assistant', content: token }];
-                    });
-                }
+                    tokenCount++;
+                    const elapsedSeconds = (Date.now() - startTime) / 1000;
+                    const tps = elapsedSeconds > 0 ? tokenCount / elapsedSeconds : 0;
 
-                if (payload.choices[0].finish_reason === 'tool_calls') {
-                    updateMessages(msgs => {
-                        const last = msgs[msgs.length - 1];
-                        return [...msgs.slice(0, -1), { ...last, tool_calls: toolCalls }];
-                    });
-                    
-                    currentStats = { ...currentStats, status: 'tool_running' as const };
-                    setStats(currentStats);
-
-                    for (const tc of toolCalls) {
-                        const args = JSON.parse(tc.function.arguments);
-                        const result = await dispatchTool(tc.function.name, args);
-                        updateMessages(msgs => [...msgs, { role: 'tool', tool_call_id: tc.id, content: String(result) }]);
+                    if (delta.reasoning_content) {
+                        currentStats = { ...currentStats, tokens: tokenCount, tps: 0, status: 'thinking' as const };
+                        setStats(currentStats);
+                        const token = delta.reasoning_content;
+                        updateMessages(msgs => {
+                            const last = msgs[msgs.length - 1];
+                            if (last && last.role === 'assistant') return [...msgs.slice(0, -1), { ...last, reasoning_content: (last.reasoning_content || '') + token }];
+                            return [...msgs, { role: 'assistant', content: '', reasoning_content: token }];
+                        });
                     }
-                    await makeCallToLLM(undefined, updateMessages, messagesRef, tools, setStats, session, saveSessionCallback, compactionStrategy, depth + 1, signal);
+
+                    if (delta.tool_calls) {
+                        currentStats = { ...currentStats, tokens: tokenCount, tps, status: 'tool_calling' as const };
+                        setStats(currentStats);
+                        for (const tc of delta.tool_calls) {
+                            if (!toolCalls[tc.index]) toolCalls[tc.index] = { id: tc.id, type: tc.type, function: { name: tc.function.name, arguments: '' } };
+                            toolCalls[tc.index].function.arguments += tc.function.arguments ?? '';
+                        }
+                    }
+
+                    if (delta.content) {
+                        currentStats = { ...currentStats, tokens: tokenCount, tps, status: 'generating' as const };
+                        setStats(currentStats);
+                        const token = delta.content;
+                        response += token;
+                        updateMessages(msgs => {
+                            const last = msgs[msgs.length - 1];
+                            if (last && last.role === 'assistant') return [...msgs.slice(0, -1), { ...last, content: last.content + token }];
+                            return [...msgs, { role: 'assistant', content: token }];
+                        });
+                    }
+
+                    if (payload.choices[0].finish_reason === 'tool_calls') {
+                        updateMessages(msgs => {
+                            const last = msgs[msgs.length - 1];
+                            return [...msgs.slice(0, -1), { ...last, tool_calls: toolCalls }];
+                        });
+                        
+                        currentStats = { ...currentStats, status: 'tool_running' as const };
+                        setStats(currentStats);
+
+                        for (const tc of toolCalls) {
+                            const args = JSON.parse(tc.function.arguments);
+                            const result = await dispatchTool(tc.function.name, args);
+                            updateMessages(msgs => [...msgs, { role: 'tool', tool_call_id: tc.id, content: String(result) }]);
+                        }
+                        didToolCall = true;
+                    }
                 }
             }
+        } catch (e) {
+            if (signal?.aborted) throw new Error("Aborted");
+            throw e;
         }
-    } catch (e) {
-        if (signal?.aborted) throw new Error("Aborted");
-        throw e;
-    }
-    session.stats = {contextSize : currentStats.contextSize };
-    session.messages = messagesRef.current;
-    await saveSession(session);
 
-    const messagesBeforeCompaction = messagesRef.current;
+        session.stats = {contextSize : currentStats.contextSize };
+        session.messages = messagesRef.current;
+        await saveSession(session);
+
+        const messagesBeforeCompaction = messagesRef.current;
+        
+        if (compactionStrategy.shouldTrigger(messagesBeforeCompaction, currentStats)) {
+            const result = await compactionStrategy.doCompaction(messagesBeforeCompaction, currentStats);
+            updateMessages(() => result.messages);
+            if (result.stats) {
+                currentStats = { ...currentStats, ...result.stats };
+            }
+        }
+
+        currentStats = { ...currentStats, status: 'idle' as const };
+        setStats(currentStats);
+        
+        if (!didToolCall) break;
+    }
     
-    if (compactionStrategy.shouldTrigger(messagesBeforeCompaction, currentStats)) {
-        const result = await compactionStrategy.doCompaction(messagesBeforeCompaction, currentStats);
-        updateMessages(() => result.messages);
-        if (result.stats) {
-            currentStats = { ...currentStats, ...result.stats };
-        }
-    }
-
-    currentStats = { ...currentStats, status: 'idle' as const };
-    setStats(currentStats);
+    if (loopCount >= maxLoops) throw new Error("Too many loops");
 }
