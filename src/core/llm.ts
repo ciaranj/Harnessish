@@ -1,7 +1,8 @@
 import React from 'react';
 import { StringDecoder } from 'node:string_decoder';
 import { Message, Stats } from './types.js';
-import { Session, saveSession } from './session.js';
+import { Session, SessionStats, saveSession } from './session.js';
+import { CompactionStrategy, NoOpCompactionStrategy } from './compaction.js';
 import { buildLLMPayload } from '../utils.js';
 import { LLAMACPP_CHAT_URL } from '../constants.js';
 import { toolsByName, toolsToOpenAITools } from '../tools/index.js';
@@ -41,13 +42,18 @@ export async function makeCallToLLM(
     setStats: React.Dispatch<React.SetStateAction<Stats>>,
     session: Session,
     saveSessionCallback: (session: Session) => Promise<void>,
+    compactionStrategy: CompactionStrategy,
     depth: number = 0,
     signal?: AbortSignal
 ) {
     if (depth > 100) throw new Error("Too many loops");
     if (message) updateMessages(msgs => [...msgs, { role: 'user', content: message }]);
     
-    setStats(prev => ({ ...prev, tokens: 0, tps: 0, status: 'sending' }));
+    let currentStats: Stats = { tokens: 0, tps: 0, status: 'sending', contextSize: 0, cachedContextSize: 0 };
+    setStats((prev) => {
+        currentStats = { ...prev, tokens: 0, tps: 0, status: 'sending' as const };
+        return currentStats;
+    });
 
     const startTime = Date.now();
     let tokenCount = 0;
@@ -56,6 +62,7 @@ export async function makeCallToLLM(
     const body = JSON.stringify(payload);
 
     session.messages = messagesRef.current;
+    session.stats = {contextSize : currentStats.contextSize };
     await saveSession(session);
 
     const res = await fetch(`${LLAMACPP_CHAT_URL}`, {
@@ -88,7 +95,8 @@ export async function makeCallToLLM(
 
                 const payload = JSON.parse(data);
                 if( payload.timings && payload.timings.prompt_n !== undefined ) {
-                    setStats(prev => ({ ...prev, contextSize: payload.timings.prompt_n + payload.timings.cache_n, cachedContextSize: payload.timings.cache_n}));
+                    currentStats = { ...currentStats, contextSize: payload.timings.prompt_n + payload.timings.cache_n, cachedContextSize: payload.timings.cache_n };
+                    setStats(currentStats);
                 }
                 const delta = payload.choices[0].delta;
 
@@ -97,7 +105,8 @@ export async function makeCallToLLM(
                 const tps = elapsedSeconds > 0 ? tokenCount / elapsedSeconds : 0;
 
                 if (delta.reasoning_content) {
-                    setStats(prev => ({ ...prev, tokens: tokenCount, tps:0, status: 'thinking' }));
+                    currentStats = { ...currentStats, tokens: tokenCount, tps: 0, status: 'thinking' as const };
+                    setStats(currentStats);
                     const token = delta.reasoning_content;
                     updateMessages(msgs => {
                         const last = msgs[msgs.length - 1];
@@ -107,7 +116,8 @@ export async function makeCallToLLM(
                 }
 
                 if (delta.tool_calls) {
-                    setStats(prev => ({ ...prev, tokens: tokenCount, tps, status: 'tool_calling' }));
+                    currentStats = { ...currentStats, tokens: tokenCount, tps, status: 'tool_calling' as const };
+                    setStats(currentStats);
                     for (const tc of delta.tool_calls) {
                         if (!toolCalls[tc.index]) toolCalls[tc.index] = { id: tc.id, type: tc.type, function: { name: tc.function.name, arguments: '' } };
                         toolCalls[tc.index].function.arguments += tc.function.arguments ?? '';
@@ -115,7 +125,8 @@ export async function makeCallToLLM(
                 }
 
                 if (delta.content) {
-                    setStats(prev => ({ ...prev, tokens: tokenCount, tps, status: 'generating' }));
+                    currentStats = { ...currentStats, tokens: tokenCount, tps, status: 'generating' as const };
+                    setStats(currentStats);
                     const token = delta.content;
                     response += token;
                     updateMessages(msgs => {
@@ -131,14 +142,15 @@ export async function makeCallToLLM(
                         return [...msgs.slice(0, -1), { ...last, tool_calls: toolCalls }];
                     });
                     
-                    setStats(prev => ({ ...prev, status: 'tool_running' }));
+                    currentStats = { ...currentStats, status: 'tool_running' as const };
+                    setStats(currentStats);
 
                     for (const tc of toolCalls) {
                         const args = JSON.parse(tc.function.arguments);
                         const result = await dispatchTool(tc.function.name, args);
                         updateMessages(msgs => [...msgs, { role: 'tool', tool_call_id: tc.id, content: String(result) }]);
                     }
-                    await makeCallToLLM(undefined, updateMessages, messagesRef, tools, setStats, session, saveSessionCallback, depth + 1, signal);
+                    await makeCallToLLM(undefined, updateMessages, messagesRef, tools, setStats, session, saveSessionCallback, compactionStrategy, depth + 1, signal);
                 }
             }
         }
@@ -146,8 +158,20 @@ export async function makeCallToLLM(
         if (signal?.aborted) throw new Error("Aborted");
         throw e;
     }
-
+    session.stats = {contextSize : currentStats.contextSize };
     session.messages = messagesRef.current;
     await saveSession(session);
-    setStats(prev => ({ ...prev, status: 'idle' }));
+
+    const messagesBeforeCompaction = messagesRef.current;
+    
+    if (compactionStrategy.shouldTrigger(messagesBeforeCompaction, currentStats)) {
+        const result = await compactionStrategy.doCompaction(messagesBeforeCompaction, currentStats);
+        updateMessages(() => result.messages);
+        if (result.stats) {
+            currentStats = { ...currentStats, ...result.stats };
+        }
+    }
+
+    currentStats = { ...currentStats, status: 'idle' as const };
+    setStats(currentStats);
 }

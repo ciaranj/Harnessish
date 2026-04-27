@@ -3,7 +3,8 @@ import { Text, Box, useApp, useInput, useStdout } from 'ink';
 import TextInput from 'ink-text-input';
 import { Message, Stats } from '../core/types.js';
 import { SessionStats, Session, saveSession, loadSession } from '../core/session.js';
-import { tools as defaultTools, toolsByName } from '../tools/index.js';
+import { CompactionStrategy,NoOpCompactionStrategy } from '../core/compaction.js';
+import { tools as defaultTools } from '../tools/index.js';
 import { LLAMACPP_HEALTH_URL } from '../constants.js';
 
 // --- UI Helpers ---
@@ -101,6 +102,7 @@ interface AppProps {
         setStats: React.Dispatch<React.SetStateAction<Stats>>,
         session: any,
         saveSessionCallback: (session: any) => Promise<void>,
+        compactionStrategy: CompactionStrategy,
         depth?: number,
         signal?: AbortSignal
     ) => Promise<void>;
@@ -244,7 +246,7 @@ export const App = ({ makeCallToLLM, initialMessages, initialSessionId, initialS
             const currentTools = tools.length > 0 ? [...tools] : [];
             const existingSession = await loadSession();
             const currentSession: Session = { id: sessionId as string, createdAt: sessionCreatedAt as string, updatedAt: new Date().toISOString(), version: existingSession ? existingSession.version : 0, messages: messagesRef.current, stats: { contextSize: stats.contextSize } };
-            await makeCallToLLM(value, updateMessages, messagesRef, currentTools, setStats, currentSession, saveSession, undefined, abortControllerRef.current.signal);
+            await makeCallToLLM(value, updateMessages, messagesRef, currentTools, setStats, currentSession, saveSession, new NoOpCompactionStrategy(), 0, abortControllerRef.current.signal);
         } catch (e) {
             if (e instanceof Error && e.message === 'Aborted') setNotification("Turn abandoned.");
             else console.log("Error:", e);
