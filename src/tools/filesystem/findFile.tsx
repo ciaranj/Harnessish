@@ -35,15 +35,27 @@ export const findFile: Tool<FindFileArgs, FindFileResult> = {
       const results: string[] = [];
 
       const walk = async (currentDir: string) => {
-        const entries = await fs.readdir(currentDir, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = path.join(currentDir, entry.name);
-          if (entry.isDirectory()) await walk(fullPath);
-          else if (entry.isFile() && patternRegex.test(entry.name)) results.push(fullPath);
+        try {
+          const entries = await fs.readdir(currentDir, { withFileTypes: true });
+          for (const entry of entries) {
+            const fullPath = path.join(currentDir, entry.name);
+            if (entry.isDirectory()) await walk(fullPath);
+            else if (entry.isFile() && patternRegex.test(entry.name)) results.push(fullPath);
+          }
+        } catch (err: any) {
+          // Skip directories that can't be read (e.g., deleted between test runs)
+          if (err.code !== 'ENOENT' && err.code !== 'EACCES') throw err;
         }
       };
 
       const absoluteStartPath = path.resolve(startPath);
+      // Check if the start path exists first
+      try {
+        await fs.stat(absoluteStartPath);
+      } catch (err: any) {
+        if (err.code === 'ENOENT') return { success: false, files: [] };
+        throw err;
+      }
       await walk(absoluteStartPath);
       return { success: true, files: results };
     } catch (error: any) {

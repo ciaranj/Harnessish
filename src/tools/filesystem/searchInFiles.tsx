@@ -4,7 +4,7 @@ import React from 'react';
 import { Text } from 'ink';
 import { Tool, ToolCallContext } from '../types.js';
 
-const execAsync = promisify(exec);
+const execAsyncLarge = (cmd: string) => promisify(exec)(cmd, { maxBuffer: 10 * 1024 * 1024 }); // 10MB buffer
 
 interface SearchInFilesArgs {
   pattern: string;
@@ -26,17 +26,22 @@ export const searchInFiles: Tool<SearchInFilesArgs, SearchInFilesResult> = {
   } as const,
   execute: async ({ pattern, path: searchPath = '.' }: SearchInFilesArgs, _ctx?: ToolCallContext): Promise<SearchInFilesResult> => {
     try {
-      const { stdout } = await execAsync(`grep -rnE "${pattern}" ${searchPath}`);
+      const { stdout, stderr } = await execAsyncLarge(`grep -rnE --no-messages "${pattern}" ${searchPath}`);
       if (!stdout.trim()) return { success: true, matches: [], truncated : false};
       const lines = stdout.trim().split('\n');
       const truncated = lines.length > 50;
       return { success: true, matches: truncated ? lines.slice(0, 50) : lines, truncated };
     } catch (error: any) {
       if( error.code == 1 ) {
-        // error code of 1 means no matches were found.
-        return { success: true, matches: [], truncated : false };
+        // exit code 1 means no matches found.
+        return { success: true, matches: [], truncated: false };
+      } else if (error.code == 2 && error.stdout && error.stdout.trim()) {
+        // exit code 2 with stdout means grep found matches but also hit errors (e.g., missing dirs).
+        const lines = error.stdout.trim().split('\n');
+        const truncated = lines.length > 50;
+        return { success: true, matches: truncated ? lines.slice(0, 50) : lines, truncated };
       } else {
-        return { success: false, matches: [], truncated : false };
+        return { success: false, matches: [], truncated: false };
       }
     }
   },
