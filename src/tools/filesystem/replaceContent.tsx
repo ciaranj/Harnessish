@@ -30,23 +30,68 @@ export const replaceContent: Tool<ReplaceContentArgs, ReplaceResult> = {
   execute: async ({ path: p, search_string, replacement_string, replace_all = false, use_regex = false }: ReplaceContentArgs, _ctx?: ToolCallContext): Promise<ReplaceResult> => {
     try {
       const content = await readFile(p, 'utf-8');
+
+      let newContent: string;
+      let count: number;
+
       if (use_regex) {
-        const regex = new RegExp(search_string, 'g');
+        let regex: RegExp;
+
+        try {
+          regex = new RegExp(search_string, replace_all ? 'g' : '');
+        } catch (error: any) {
+          return {
+            success: false,
+            message: `Error: Invalid regular expression "${search_string}": ${error.message}`,
+          };
+        }
+
         const matches = content.match(regex);
-        if (!matches) return { success: false, message: `Error: Pattern "${search_string}" not found in "${p}".` };
-        const newContent = content.replace(regex, replacement_string);
-        await writeFile(p, newContent, 'utf-8');
-        const count = replace_all ? matches.length : 1;
-        return { success: true, message: `Successfully replaced ${count} occurrence(s) in ${p}` };
+        if (!matches || matches.length === 0) {
+          return {
+            success: false,
+            message: `Error: Pattern "${search_string}" not found in "${p}".`,
+          };
+        }
+
+        count = replace_all ? matches.length : 1;
+        newContent = content.replace(regex, replacement_string);
       } else {
-        if (!content.includes(search_string)) return { success: false, message: `Error: Search string not found in "${p}".` };
-        const newContent = replace_all ? content.split(search_string).join(replacement_string) : content.replace(search_string, replacement_string);
-        await writeFile(p, newContent, 'utf-8');
-        const count = replace_all ? (content.split(search_string).length - 1) : 1;
-        return { success: true, message: `Successfully replaced ${count} occurrence(s) in ${p}` };
+        if (!content.includes(search_string)) {
+          return {
+            success: false,
+            message: `Error: Search string not found in "${p}".`,
+          };
+        }
+
+        if (replace_all) {
+          const parts = content.split(search_string);
+          count = parts.length - 1;
+          newContent = parts.join(replacement_string);
+        } else {
+          count = 1;
+          newContent = content.replace(search_string, replacement_string);
+        }
       }
+
+      if (newContent === content) {
+        return {
+          success: false,
+          message: `Error: Replacement produced no changes in "${p}".`,
+        };
+      }
+
+      await writeFile(p, newContent, 'utf-8');
+
+      return {
+        success: true,
+        message: `Successfully replaced ${count} occurrence(s) in ${p}`,
+      };
     } catch (error: any) {
-      return { success: false, message: `Error: ${error.message}` };
+      return {
+        success: false,
+        message: `Error: ${error?.message ?? String(error)}`,
+      };
     }
   },
   renderCall: ({ path: p, search_string, replacement_string, use_regex, replace_all }: ReplaceContentArgs) => (

@@ -52,12 +52,24 @@ describe('replaceContent', () => {
         expect(result.message).toContain('not found');
     });
 
-    it('should replace using regex when use_regex=true', async () => {
+    it('should replace only the first match when use_regex=true and replace_all=false which is the default for replace_all', async () => {
         const testPath = 'test_replace_regex.txt';
         testFiles.push(testPath);
         await writeFile(testPath, 'abc123def456ghi', 'utf-8');
 
         const result = await replaceContent.execute({ path: testPath, search_string: '\\d+', replacement_string: 'NUM', use_regex: true });
+
+        expect(result.success).toBe(true);
+        const content = await readFile(testPath, 'utf-8');
+        expect(content).toBe('abcNUMdef456ghi');
+    });
+
+    it('should replace all matches when use_regex=true and replace_all=true', async () => {
+        const testPath = 'test_replace_regex_all.txt';
+        testFiles.push(testPath);
+        await writeFile(testPath, 'abc123def456ghi', 'utf-8');
+
+        const result = await replaceContent.execute({ path: testPath, search_string: '\\d+', replacement_string: 'NUM', use_regex: true, replace_all: true });
 
         expect(result.success).toBe(true);
         const content = await readFile(testPath, 'utf-8');
