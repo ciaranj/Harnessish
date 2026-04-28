@@ -22,7 +22,7 @@ describe('readFiles', () => {
 
     it('should read multiple valid files successfully', async () => {
         const file1 = 'src/utils.ts';
-        const file2 = 'src/types.ts';
+        const file2 = 'src/core/types.ts';
 
         const result = await readFiles.execute({ paths: [file1, file2] });
 
@@ -86,7 +86,7 @@ describe('readFiles', () => {
     });
 
     it('should preserve file content with newlines and formatting', async () => {
-        const result = await readFiles.execute({ paths: ['src/types.ts'] });
+        const result = await readFiles.execute({ paths: ['src/core/types.ts'] });
 
         expect(result[0].success).toBe(true);
         expect(result[0].content).toContain('\n');

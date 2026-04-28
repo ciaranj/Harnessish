@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { buildLLMPayload } from './utils.js';
-import { Message } from './types.js';
+import { Message } from './core/types.js';
 
 describe('buildLLMPayload', () => {
     beforeAll(() => {
