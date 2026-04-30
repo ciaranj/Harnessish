@@ -129,4 +129,49 @@ describe('replaceContent', () => {
         const content = await readFile(testPath, 'utf-8');
         expect(content).toBe('<section>content</div>');
     });
+
+    // --- Edge case tests: missing required arguments ---
+
+    it('should return a clear error when path is missing', async () => {
+        const result = await replaceContent.execute({ search_string: 'old', replacement_string: 'new' } as any);
+
+        expect(result.success).toBe(false);
+        expect(result.message.toLowerCase()).toContain('missing required');
+        expect(result.message).toContain('path');
+    });
+
+    it('should return a clear error when search_string is missing', async () => {
+        const result = await replaceContent.execute({ path: 'test.txt', replacement_string: 'new' } as any);
+
+        expect(result.success).toBe(false);
+        expect(result.message.toLowerCase()).toContain('missing required');
+        expect(result.message).toContain('search_string');
+    });
+
+    it('should return a clear error when replacement_string is missing', async () => {
+        const result = await replaceContent.execute({ path: 'test.txt', search_string: 'old' } as any);
+
+        expect(result.success).toBe(false);
+        expect(result.message.toLowerCase()).toContain('missing required');
+        expect(result.message).toContain('replacement_string');
+    });
+
+    it('should return a clear error when all required arguments are missing (empty object)', async () => {
+        const result = await replaceContent.execute({} as any);
+
+        expect(result.success).toBe(false);
+        expect(result.message.toLowerCase()).toContain('missing required');
+        // Should mention all three required fields
+        expect(result.message).toContain('path');
+        expect(result.message).toContain('search_string');
+        expect(result.message).toContain('replacement_string');
+    });
+
+    it('should return a clear error when path is empty string', async () => {
+        const result = await replaceContent.execute({ path: '', search_string: 'old', replacement_string: 'new' as any } as any);
+
+        expect(result.success).toBe(false);
+        expect(result.message.toLowerCase()).toContain('missing required');
+        expect(result.message).toContain('path');
+    });
 });

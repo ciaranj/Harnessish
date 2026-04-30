@@ -28,6 +28,15 @@ export const replaceContent: Tool<ReplaceContentArgs, ReplaceResult> = {
     required: ["path", "search_string", "replacement_string"]
   } as const,
   execute: async ({ path: p, search_string, replacement_string, replace_all = false, use_regex = false }: ReplaceContentArgs, _ctx?: ToolCallContext): Promise<ReplaceResult> => {
+    // Validate required fields before attempting any file I/O.
+    const missing: string[] = [];
+    if (!p || typeof p !== 'string' || p.trim() === '') missing.push('path');
+    if (search_string === undefined || search_string === null) missing.push('search_string');
+    if (replacement_string === undefined || replacement_string === null) missing.push('replacement_string');
+    if (missing.length > 0) {
+      return { success: false, message: `Missing required argument(s): ${missing.join(', ')}` };
+    }
+
     try {
       const content = await readFile(p, 'utf-8');
 
