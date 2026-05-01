@@ -1,23 +1,26 @@
-import React from 'react';
 import { render } from 'ink';
 import { App } from './ui/App.js';
 import { makeCallToLLM } from './core/llm.js';
-import { loadSession, Session, SessionStats, saveSession } from './core/session.js';
-import { randomUUID } from 'node:crypto';
+import { loadSession, createSession, SessionStore } from './core/session.js';
 
 async function main() {
-    let initialSession: Session | null = null;
+    let store: SessionStore;
     try {
-        initialSession = await loadSession();
+        const loaded = await loadSession();
+        const session = loaded || createSession();
+        store = new SessionStore(session);
+        if (loaded) {
+            console.log(`Resumed session: ${session.id} (${session.messages.length} messages)`);
+        } else {
+            await store.persist();
+            console.log('Started new session');
+        }
     } catch (err) {
-        console.error('Failed to load session:', err);
+        console.error('Failed to load/create session:', err);
+        store = new SessionStore(createSession());
     }
 
-    const initialMessages = initialSession?.messages || [];
-    const initialSessionId = initialSession?.id || randomUUID();
-    const initialStats: SessionStats | undefined = initialSession?.stats;
-
-    render(<App makeCallToLLM={makeCallToLLM} initialMessages={initialMessages} initialSessionId={initialSessionId} initialStats={initialStats} />);
+    render(<App makeCallToLLM={makeCallToLLM} store={store} />);
 }
 
 main();

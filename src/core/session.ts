@@ -20,6 +20,7 @@ const SESSION_DIRNAME = '.h/sessions';
 const SESSION_FILENAME = 'session.json';
 const BACKUP_SUFFIX = '.bak';
 const TEMP_SUFFIX = '.tmp';
+const FULL_HISTORY_FILENAME = 'session_full_history.json';
 
 async function ensureSessionDir(directory: string): Promise<void> {
     const sessionDir = path.join(directory, SESSION_DIRNAME);
@@ -30,10 +31,6 @@ async function ensureSessionDir(directory: string): Promise<void> {
 
 function getSessionFilePath(directory: string = process.cwd()): string {
     return path.join(directory, SESSION_DIRNAME, SESSION_FILENAME);
-}
-
-function getLegacySessionFilePath(directory: string = process.cwd()): string {
-    return path.join(directory, 'session.json');
 }
 
 export function createSession(directory: string = process.cwd()): Session {
@@ -96,23 +93,6 @@ export async function loadSession(directory: string = process.cwd()): Promise<Se
         return session;
     }
     
-    const legacyPath = getLegacySessionFilePath(directory);
-    if (fs.existsSync(legacyPath)) {
-        try {
-            const data = fs.readFileSync(legacyPath, 'utf-8');
-            const parsed = JSON.parse(data);
-            if (parsed.id && parsed.createdAt && parsed.updatedAt && parsed.version !== undefined && Array.isArray(parsed.messages)) {
-                await ensureSessionDir(directory);
-                fs.writeFileSync(filePath, data);
-                fs.unlinkSync(legacyPath);
-                console.log('Migrated session from session.json to .h/sessions/');
-                return parsed as Session;
-            }
-        } catch (err) {
-            console.error(`Failed to migrate legacy session: ${err}`);
-        }
-    }
-    
     const backupSession = await loadBackupFromFile(filePath);
     if (backupSession) {
         console.log('Loaded session from backup');
@@ -166,15 +146,15 @@ export async function resetSession(directory: string = process.cwd()): Promise<S
 export async function trySaveSession(session: Session, directory: string = process.cwd()): Promise<{ saved: boolean; error?: Error }> {
     const filePath = getSessionFilePath(directory);
     const tempPath = filePath + TEMP_SUFFIX;
-    
+
     try {
         const existingData = fs.readFileSync(filePath, 'utf-8');
         const existingSession = JSON.parse(existingData) as Session;
-        
+
         if (existingSession.version !== session.version - 1) {
             return { saved: false, error: new Error('Version mismatch - session was modified by another process') };
         }
-        
+
         await saveSession(session, directory);
         return { saved: true };
     } catch (err) {
@@ -189,5 +169,84 @@ export async function trySaveSession(session: Session, directory: string = proce
             }
         }
         return { saved: false, error: err as Error };
+    }
+}
+
+// --- SessionStore: immutable session lifecycle manager ---
+
+/** Thin wrapper around a Session that guarantees immutability. */
+export class SessionStore {
+    private current: Session;
+    private directory: string;
+
+    constructor(initial: Session, directory: string = process.cwd()) {
+        this.current = initial;
+        this.directory = directory;
+    }
+
+    /** Returns a deep snapshot of the current session (safe to read, not to mutate). */
+    getSnapshot(): Session {
+        return { ...this.current, messages: [...this.current.messages] };
+    }
+
+    /** Returns a shallow copy of messages — caller should not mutate in place. */
+    getMessages(): Message[] {
+        return this.current.messages;
+    }
+
+    /**
+     * Update messages immutably. `updater` receives the current message list
+     * and must return a new array (or the same if unchanged).
+     */
+    updateMessages(updater: (msgs: Message[]) => Message[]): void {
+        const next = updater([...this.current.messages]);
+        this.current = { ...this.current, messages: next, updatedAt: new Date().toISOString() };
+    }
+
+    /** Update stats immutably. Only updates fields that are non-undefined in `partial`. */
+    setStats(partial: Partial<Session['stats']>): void {
+        if (!partial || Object.keys(partial).length === 0) return;
+        // Filter out undefined values — spread of Partial<T> into T is unsafe for TS
+        const defined: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(partial)) {
+            if (v !== undefined) defined[k] = v;
+        }
+        this.current = {
+            ...this.current,
+            stats: { ...this.current.stats, ...defined } as SessionStats,
+            updatedAt: new Date().toISOString(),
+        };
+    }
+
+    /** Persist the current session to disk. */
+    async persist(): Promise<void> {
+        await saveSession(this.current, this.directory);
+    }
+
+    /**
+     * Reset: archive the old session and create a fresh one.
+     * Returns the new session (already saved).
+     */
+    async reset(): Promise<Session> {
+        const newSession = await resetSession(this.directory);
+        this.current = newSession;
+        return newSession;
+    }
+
+    /**
+     * Resolve a conflict when another process wrote to disk.
+     * Merges the remote session's messages into this store, keeping ours as a suffix.
+     */
+    resolveConflict(remote: Session): void {
+        // Take remote messages (authoritative), then append any messages we had that aren't in remote
+        const remoteMsgIds = new Set(remote.messages.map((m, i) => `${m.role}-${i}`));
+        const localOnly = this.current.messages.filter(
+            (m, i) => !remoteMsgIds.has(`${m.role}-${i}`)
+        );
+        this.current = {
+            ...remote,
+            messages: [...remote.messages, ...localOnly],
+            updatedAt: new Date().toISOString(),
+        };
     }
 }

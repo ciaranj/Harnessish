@@ -2,8 +2,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Text, Box, useApp, useInput, useStdout } from 'ink';
 import TextInput from 'ink-text-input';
 import { Message, Stats } from '../core/types.js';
-import { SessionStats, Session, saveSession, loadSession } from '../core/session.js';
-import { CompactionStrategy,NoOpCompactionStrategy } from '../core/compaction.js';
+import { SessionStore } from '../core/session.js';
+import { CompactionStrategy, RunningMemoryStrategy } from '../core/compaction.js';
 import { tools as defaultTools } from '../tools/index.js';
 import { LLAMACPP_HEALTH_URL } from '../constants.js';
 
@@ -100,40 +100,45 @@ interface AppProps {
         messagesRef: React.MutableRefObject<Message[]>,
         tools: any[],
         setStats: React.Dispatch<React.SetStateAction<Stats>>,
-        session: any,
-        saveSessionCallback: (session: any) => Promise<void>,
+        store: SessionStore,
         compactionStrategy: CompactionStrategy,
         signal?: AbortSignal
     ) => Promise<void>;
-    initialMessages: Message[];
-    initialSessionId: string;
-    initialStats?: SessionStats;
+    store: SessionStore;
 }
 
-export const App = ({ makeCallToLLM, initialMessages, initialSessionId, initialStats }: AppProps) => {
-    const [messages, setMessages] = useState<Message[]>(initialMessages);
+export const App = ({ makeCallToLLM, store }: AppProps) => {
+    const initialMessages = store.getMessages();
     const messagesRef = useRef<Message[]>(initialMessages);
+    const [messages, setMessages] = useState<Message[]>(initialMessages);
     const [input, setInput] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
-    const [stats, setStats] = useState<Stats>((initialStats ? {tokens:0, tps: 0, status: 'idle', contextSize: initialStats.contextSize, cachedContextSize: 0} : null) || { tokens: 0, tps: 0, status: 'idle', contextSize: 0, cachedContextSize:0 });
+    const [stats, setStats] = useState<Stats>({ tokens: 0, tps: 0, status: 'idle', contextSize: store.getSnapshot().stats?.contextSize ?? 0, cachedContextSize: 0 });
     const [notification, setNotification] = useState<string | null>(null);
     const { exit } = useApp();
     const [tools, setTools] = useState(defaultTools);
-    const [sessionId, setSessionId] = useState(initialSessionId);
-    const [sessionCreatedAt, setSessionCreatedAt] = useState(initialMessages.length > 0 ? new Date().toISOString() : new Date().toISOString());
-
     const [scrollOffset, setScrollOffset] = useState(0);
     const [isNavMode, setIsNavMode] = useState(false);
     const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
     const abortControllerRef = useRef<AbortController | null>(null);
     const suppressNextInputChange = useRef(false);
+    const compactionStrategy = new RunningMemoryStrategy();
 
     const updateMessages = useCallback((updateFn: (msgs: Message[]) => Message[]) => {
         const next = updateFn([...messagesRef.current]);
         messagesRef.current = next;
+        store.updateMessages(() => next);
         setMessages(next);
         return next;
-    }, []);
+    }, [store]);
+
+    const persistSession = useCallback(async () => {
+        try {
+            await store.persist();
+        } catch (err) {
+            console.error('Failed to save session:', err);
+        }
+    }, [store]);
 
     const [termWidth, termHeight] = useStdoutDimensions();
 
@@ -206,19 +211,33 @@ export const App = ({ makeCallToLLM, initialMessages, initialSessionId, initialS
 
     const handleInput = async (value: string) => {
         if (!value.trim() || isProcessing || isConfirmingCancel) return;
+
         if (value === '/exit') { exit(); return; }
-        if (value === '/reset') { 
-            const { resetSession } = await import('../core/session.js');
-            const newSession = await resetSession();
-            setSessionId(newSession.id);
-            setSessionCreatedAt(newSession.createdAt);
-            updateMessages(() => []); 
+
+        if (value === '/reset') {
+            await store.reset();
+            messagesRef.current = [];
+            setMessages([]);
             setIsProcessing(false);
-            setStats({ tokens: 0, tps: 0, status: 'idle', contextSize: 0, cachedContextSize:0 });
+            setStats({ tokens: 0, tps: 0, status: 'idle', contextSize: 0, cachedContextSize: 0 });
             setInput('');
             return;
         }
-        
+
+        if (value === '/compact') {
+            const preCompactMessageLength = messagesRef.current.length;
+            const compacted = await compactionStrategy.doCompaction(messagesRef.current, stats);
+            updateMessages(() => compacted.messages);
+            let msg = `Compacted: ${preCompactMessageLength} → ${compacted.messages.length} messages`;
+            if (compacted.contextMdPath) {
+                msg += ` | wrote ${compacted.contextMdPath}`;
+            }
+            setNotification(msg);
+            await persistSession();
+            setInput('');
+            return;
+        }
+
         if (value === '/dump_context') {
             try {
                 const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -240,12 +259,11 @@ export const App = ({ makeCallToLLM, initialMessages, initialSessionId, initialS
         setIsProcessing(true);
         setInput('');
         abortControllerRef.current = new AbortController();
-        
+
         try {
             const currentTools = tools.length > 0 ? [...tools] : [];
-            const existingSession = await loadSession();
-            const currentSession: Session = { id: sessionId as string, createdAt: sessionCreatedAt as string, updatedAt: new Date().toISOString(), version: existingSession ? existingSession.version : 0, messages: messagesRef.current, stats: { contextSize: stats.contextSize } };
-            await makeCallToLLM(value, updateMessages, messagesRef, currentTools, setStats, currentSession, saveSession, new NoOpCompactionStrategy(), abortControllerRef.current.signal);
+            await makeCallToLLM(value, updateMessages, messagesRef, currentTools, setStats, store, compactionStrategy, abortControllerRef.current.signal);
+            await persistSession();
         } catch (e) {
             if (e instanceof Error && e.message === 'Aborted') setNotification("Turn abandoned.");
             else console.log("Error:", e);
@@ -276,11 +294,11 @@ export const App = ({ makeCallToLLM, initialMessages, initialSessionId, initialS
                     <Text color="gray" dimColor>No messages yet. Type something below!</Text>
                 ) : (
                     visibleLines.map((line, i) => (
-                        <Text 
-                            key={i} 
+                        <Text
+                            key={i}
                             color={
-                                line.isHeader 
-                                    ? (line.role === 'user' ? 'green' : line.role === 'assistant' ? 'cyan' : 'yellow') 
+                                line.isHeader
+                                    ? (line.role === 'user' ? 'green' : line.role === 'assistant' ? 'cyan' : 'yellow')
                                     : (line.isReasoning ? 'gray' : 'white')
                             }
                             bold={line.isHeader}
@@ -325,10 +343,10 @@ export const App = ({ makeCallToLLM, initialMessages, initialSessionId, initialS
 
             <Box borderStyle="round" borderColor="gray" marginTop={1} paddingX={1}>
                 <Text color="gray">
-                    {isNavMode ? "MODE: NAVIGATION (Arrows to scroll)" : "MODE: INPUT"} | 
-                    Status: <Text color="cyan">{stats.status.toUpperCase()}</Text> | 
-                    Tokens: <Text color="cyan">{stats.tokens}</Text> | 
-                    TPS: <Text color="cyan">{stats.tps.toFixed(1)}</Text> | 
+                    {isNavMode ? "MODE: NAVIGATION (Arrows to scroll)" : "MODE: INPUT"} |
+                    Status: <Text color="cyan">{stats.status.toUpperCase()}</Text> |
+                    Tokens: <Text color="cyan">{stats.tokens}</Text> |
+                    TPS: <Text color="cyan">{stats.tps.toFixed(1)}</Text> |
                     Context: <Text color="cyan">{stats.contextSize} ({stats.cachedContextSize} cached)</Text>
                 </Text>
             </Box>

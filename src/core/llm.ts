@@ -1,7 +1,7 @@
 import React from 'react';
 import { StringDecoder } from 'node:string_decoder';
 import { Message, Stats } from './types.js';
-import { Session, SessionStats, saveSession } from './session.js';
+import { SessionStore } from './session.js';
 import { CompactionStrategy, NoOpCompactionStrategy } from './compaction.js';
 import { buildLLMPayload } from '../utils.js';
 import { LLAMACPP_CHAT_URL } from '../constants.js';
@@ -40,20 +40,19 @@ export async function makeCallToLLM(
     messagesRef: React.MutableRefObject<Message[]>,
     tools: any[],
     setStats: React.Dispatch<React.SetStateAction<Stats>>,
-    session: Session,
-    saveSessionCallback: (session: Session) => Promise<void>,
+    store: SessionStore,
     compactionStrategy: CompactionStrategy,
     signal?: AbortSignal
 ) {
     let loopCount = 0;
     const maxLoops = 100;
-    
+
     while (loopCount < maxLoops) {
         loopCount++;
-        
+
         if (message) updateMessages(msgs => [...msgs, { role: 'user', content: message }]);
         message = undefined;
-        
+
         let currentStats: Stats = { tokens: 0, tps: 0, status: 'sending', contextSize: 0, cachedContextSize: 0 };
         setStats((prev) => {
             currentStats = { ...prev, tokens: 0, tps: 0, status: 'sending' as const };
@@ -63,12 +62,12 @@ export async function makeCallToLLM(
         const startTime = Date.now();
         let tokenCount = 0;
 
+        // Messages are kept in sync via App's updateMessages (which calls store.updateMessages).
+        // Just track stats here.
+        store.setStats({ contextSize: currentStats.contextSize });
+
         const payload = buildLLMPayload(messagesRef.current, toolsToOpenAITools(tools));
         const body = JSON.stringify(payload);
-
-        session.messages = messagesRef.current;
-        session.stats = {contextSize : currentStats.contextSize };
-        await saveSession(session);
 
         const res = await fetch(`${LLAMACPP_CHAT_URL}`, {
             method: 'POST',
@@ -148,7 +147,7 @@ export async function makeCallToLLM(
                             const last = msgs[msgs.length - 1];
                             return [...msgs.slice(0, -1), { ...last, tool_calls: toolCalls }];
                         });
-                        
+
                         currentStats = { ...currentStats, status: 'tool_running' as const };
                         setStats(currentStats);
 
@@ -166,25 +165,26 @@ export async function makeCallToLLM(
             throw e;
         }
 
-        session.stats = {contextSize : currentStats.contextSize };
-        session.messages = messagesRef.current;
-        await saveSession(session);
+        // Always persist at end of turn
+        store.setStats({ contextSize: currentStats.contextSize });
+        await store.persist();
 
-        const messagesBeforeCompaction = messagesRef.current;
-        
-        if (compactionStrategy.shouldTrigger(messagesBeforeCompaction, currentStats)) {
-            const result = await compactionStrategy.doCompaction(messagesBeforeCompaction, currentStats);
+        if (compactionStrategy.shouldTrigger(messagesRef.current, currentStats)) {
+            const result = await compactionStrategy.doCompaction(messagesRef.current, currentStats);
             updateMessages(() => result.messages);
             if (result.stats) {
                 currentStats = { ...currentStats, ...result.stats };
             }
+            store.setStats({ contextSize: currentStats.contextSize });
+            await store.persist();
         }
+
 
         currentStats = { ...currentStats, status: 'idle' as const };
         setStats(currentStats);
-        
+
         if (!didToolCall) break;
     }
-    
+
     if (loopCount >= maxLoops) throw new Error("Too many loops");
 }
