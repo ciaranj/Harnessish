@@ -91,4 +91,21 @@ describe('findFile', () => {
         expect(result.files[0]).not.toContain('.');
         expect(result.files[0]).toBe(path.resolve(`${testDir}/file`));
     });
+
+    // --- renderCallText tests ---
+
+    it('renderCallText should show "Finding" with default directory', () => {
+        const text = findFile.renderCallText({ pattern: '*.ts' });
+        expect(text).toBe('Finding "*.ts" in .');
+    });
+
+    it('renderCallText should include custom path when provided', () => {
+        const text = findFile.renderCallText({ pattern: '*.tsx', path: 'src/tools' });
+        expect(text).toBe('Finding "*.tsx" in src/tools');
+    });
+
+    it('renderCallText should handle empty pattern', () => {
+        const text = findFile.renderCallText({ pattern: '', path: '.' });
+        expect(text).toBe('Finding "" in .');
+    });
 });

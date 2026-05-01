@@ -4,7 +4,7 @@ import TextInput from 'ink-text-input';
 import { Message, Stats } from '../core/types.js';
 import { SessionStore } from '../core/session.js';
 import { CompactionStrategy, RunningMemoryStrategy } from '../core/compaction.js';
-import { tools as defaultTools } from '../tools/index.js';
+import { tools as defaultTools, toolsByName } from '../tools/index.js';
 import { LLAMACPP_HEALTH_URL } from '../constants.js';
 
 // --- UI Helpers ---
@@ -84,8 +84,21 @@ function getRenderLines(messages: Message[], width: number): RenderLine[] {
             }
         }
         if (msg.tool_calls && msg.tool_calls.length > 0) {
-            const toolNames = msg.tool_calls.map((tc: any) => tc.function?.name || tc.name).join(', ');
-            lines.push({ content: `🛠️ ${toolNames}`, isHeader: false, role: msg.role, isReasoning: false });
+            for (const tc of msg.tool_calls) {
+                const toolName = tc.function?.name || tc.name;
+                const toolDef = toolsByName[toolName];
+                let description: string;
+                if (toolDef?.renderCallText) {
+                    let args: any = {};
+                    try {
+                        args = JSON.parse(tc.function?.arguments ?? '{}');
+                    } catch { /* ignore */ }
+                    description = toolDef.renderCallText(args);
+                } else {
+                    description = toolName;
+                }
+                lines.push({ content: `🛠️ ${description}`, isHeader: false, role: msg.role, isReasoning: false });
+            }
         }
     }
     return lines;

@@ -9,6 +9,11 @@ interface RunPythonArgs {
 
 type PythonResult = { success: boolean; output: string };
 
+function renderRunPythonCall(code: string): string {
+  const snippet = code.slice(0, 60);
+  return `Running Generated Python Script`;
+}
+
 export const runPython: Tool<RunPythonArgs, PythonResult> = {
   name: "python",
   description: "Runs code in an ipython interpreter and returns the result.",
@@ -33,8 +38,10 @@ export const runPython: Tool<RunPythonArgs, PythonResult> = {
     });
   },
   renderCall: ({ code }: RunPythonArgs) => (
-    <Text color="cyan">python -c "{code.slice(0, 60)}{code.length > 60 ? '...' : ''}"</Text>
+    <Text color="cyan">{renderRunPythonCall(code)}</Text>
   ),
+  renderCallText: ({ code }: RunPythonArgs) =>
+    renderRunPythonCall(code),
   renderResult: (result: PythonResult) => (
     <Text color={result.success ? "green" : "red"}>{result.output}</Text>
   )

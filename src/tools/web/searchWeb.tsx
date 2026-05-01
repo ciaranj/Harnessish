@@ -15,6 +15,10 @@ interface SearchResult {
 
 type SearchWebResult = { success: boolean; results: SearchResult[] };
 
+function renderSearchWebCall(query: string): string {
+  return `Searching web for "${query}"`;
+}
+
 export const searchWeb: Tool<SearchWebArgs, SearchWebResult> = {
   name: "search_web",
   description: "Search the web using SearXNG.",
@@ -44,8 +48,10 @@ export const searchWeb: Tool<SearchWebArgs, SearchWebResult> = {
     }
   },
   renderCall: ({ query }: SearchWebArgs) => (
-    <Text color="cyan">search: "{query}"</Text>
+    <Text color="cyan">{renderSearchWebCall(query)}</Text>
   ),
+  renderCallText: ({ query }: SearchWebArgs) =>
+    renderSearchWebCall(query),
   renderResult: (result: SearchWebResult) => (
     <Text color="gray">
       {result.success && result.results.length > 0

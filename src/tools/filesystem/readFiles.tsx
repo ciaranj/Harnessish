@@ -92,12 +92,10 @@ export const readFiles: Tool<ReadFilesArgs, FileReadResult[]> = {
     return results;
   },
   renderCall: ({ paths }: ReadFilesArgs) => (
-    <Text color="cyan">
-      {paths.map((p) =>
-        typeof p === 'string' ? p : `${p.path}:${p.start}-${p.end}`
-      ).join(", ")}
-    </Text>
+    <Text color="cyan">{renderReadFilesCall(paths)}</Text>
   ),
+  renderCallText: ({ paths }: ReadFilesArgs) =>
+    renderReadFilesCall(paths),
   renderResult: (results: FileReadResult[]) => (
     <Text color="gray">
       {results.map((r: FileReadResult) =>
@@ -108,3 +106,9 @@ export const readFiles: Tool<ReadFilesArgs, FileReadResult[]> = {
     </Text>
   )
 };
+
+function renderReadFilesCall(paths: ReadFileLineRange[]): string {
+  return "Reading " + paths.map((p) =>
+    typeof p === 'string' ? p : (p.start != null && p.end != null ? `${p.path}:${p.start}-${p.end}` : p.path)
+  ).join(", ");
+}

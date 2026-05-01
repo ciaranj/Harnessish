@@ -119,6 +119,28 @@ describe('searchInFiles', () => {
         expect(result.matches.length).toBeLessThanOrEqual(35);
     });
 
+ // --- renderCallText tests ---
+
+    it('renderCallText should show "Searching for" with default directory', () => {
+        const text = searchInFiles.renderCallText({ pattern: 'hello' });
+        expect(text).toBe('Searching for "hello" in .');
+    });
+
+    it('renderCallText should include custom path when provided', () => {
+        const text = searchInFiles.renderCallText({ pattern: 'foo', path: 'src/tools' });
+        expect(text).toBe('Searching for "foo" in src/tools');
+    });
+
+    it('renderCallText should handle regex patterns in output', () => {
+        const text = searchInFiles.renderCallText({ pattern: '\\d+\\.ts' });
+        expect(text).toBe('Searching for "\\d+\\.ts" in .');
+    });
+
+    it('renderCallText should handle empty pattern', () => {
+        const text = searchInFiles.renderCallText({ pattern: '', path: './src' });
+        expect(text).toBe('Searching for "" in ./src');
+    });
+
     afterEach(async () => {
         const { unlink } = await import('node:fs/promises');
         const files = [

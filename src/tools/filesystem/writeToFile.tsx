@@ -11,6 +11,11 @@ interface WriteToFileArgs {
 
 type WriteToFileResult = { success: boolean; message: string };
 
+function renderWriteToFileCall(path: string, content: string, mode?: string): string {
+  const action = mode === 'append' ? 'Appending to' : 'Writing';
+  return `${action} ${path} (${content.length} bytes)`;
+}
+
 export const writeToFile: Tool<WriteToFileArgs, WriteToFileResult> = {
   name: "write_to_file",
   description: "Creates a new file or overwrites an existing file with the provided content. Use mode='append' to append to an existing file.",
@@ -36,8 +41,10 @@ export const writeToFile: Tool<WriteToFileArgs, WriteToFileResult> = {
     }
   },
   renderCall: ({ path: p, content, mode }: WriteToFileArgs) => (
-    <Text color="cyan">{mode || 'overwrite'} → {p} ({content.length} bytes)</Text>
+    <Text color="cyan">{renderWriteToFileCall(p, content, mode)}</Text>
   ),
+  renderCallText: ({ path: p, content, mode }: WriteToFileArgs) =>
+    renderWriteToFileCall(p, content, mode),
   renderResult: (result: WriteToFileResult) => (
     <Text color={result.success ? "green" : "red"}>{result.message}</Text>
   )

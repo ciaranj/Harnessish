@@ -8,6 +8,10 @@ interface FetchUrlArgs {
 
 type FetchUrlResult = { success: boolean; content: string; status: number };
 
+function renderFetchUrlCall(url: string): string {
+  return `Fetching ${url}`;
+}
+
 export const fetchUrl: Tool<FetchUrlArgs, FetchUrlResult> = {
   name: "fetch_url",
   description: "Fetches the content of a URL and returns it as text.",
@@ -29,8 +33,10 @@ export const fetchUrl: Tool<FetchUrlArgs, FetchUrlResult> = {
     }
   },
   renderCall: ({ url }: FetchUrlArgs) => (
-    <Text color="cyan">fetching: {url}</Text>
+    <Text color="cyan">{renderFetchUrlCall(url)}</Text>
   ),
+  renderCallText: ({ url }: FetchUrlArgs) =>
+    renderFetchUrlCall(url),
   renderResult: (result: FetchUrlResult) => (
     <Text color={result.success ? "green" : "red"}>
       {result.status === 0 ? result.content : `HTTP ${result.status} (${result.content.length} bytes)`}

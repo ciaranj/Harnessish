@@ -36,4 +36,11 @@ describe('runPython', () => {
         expect(result.success).toBe(true);
         expect(result.output).toContain('[1, 2, 3]');
     }, 65000);
+
+    // --- renderCallText tests ---
+
+    it('renderCallText should show "Running Generated Python Script"', () => {
+        const text = runPython.renderCallText({ code: 'print("hello")' });
+        expect(text).toBe('Running Generated Python Script');
+    });
 });

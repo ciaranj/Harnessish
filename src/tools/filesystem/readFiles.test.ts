@@ -230,4 +230,41 @@ describe('readFiles', () => {
         // Duplicate ranges should return identical content
         expect(result[0].content).toBe(result[2].content);
     });
+
+    // --- renderCallText tests ---
+
+    it('renderCallText should show "Reading" prefix with full file paths', () => {
+        const text = readFiles.renderCallText({ paths: [{ path: 'src/utils.ts' }, { path: 'src/core/types.ts' }] });
+        expect(text).toBe('Reading src/utils.ts, src/core/types.ts');
+    });
+
+    it('renderCallText should show line ranges when start and end are provided', () => {
+        const text = readFiles.renderCallText({ paths: [{ path: 'src/utils.ts', start: 10, end: 20 }] });
+        expect(text).toBe('Reading src/utils.ts:10-20');
+    });
+
+    it('renderCallText should omit line range when start is undefined but end is defined', () => {
+        const text = readFiles.renderCallText({ paths: [{ path: 'src/utils.ts', end: 5 }] });
+        expect(text).toBe('Reading src/utils.ts');
+    });
+
+    it('renderCallText should omit line range when end is undefined but start is defined', () => {
+        const text = readFiles.renderCallText({ paths: [{ path: 'src/utils.ts', start: 5 }] });
+        expect(text).toBe('Reading src/utils.ts');
+    });
+
+    it('renderCallText should handle mixed full reads and line-range reads', () => {
+        const text = readFiles.renderCallText({
+            paths: [
+                { path: 'src/utils.ts' },
+                { path: 'src/core/types.ts', start: 1, end: 3 }
+            ]
+        });
+        expect(text).toBe('Reading src/utils.ts, src/core/types.ts:1-3');
+    });
+
+    it('renderCallText should handle empty paths array', () => {
+        const text = readFiles.renderCallText({ paths: [] });
+        expect(text).toBe('Reading ');
+    });
 });

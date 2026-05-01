@@ -11,6 +11,7 @@ export interface Tool<TArgs, TResult> {
   execute: (args: TArgs, ctx?: ToolCallContext) => Promise<TResult>;
   renderCall?: (args: TArgs) => React.ReactNode;
   renderResult?: (result: TResult) => React.ReactNode;
+  renderCallText?: (args: TArgs) => string;
 }
 
 export function toolToOpenAITool<TArgs, TResult>(tool: Tool<TArgs, TResult>): any {

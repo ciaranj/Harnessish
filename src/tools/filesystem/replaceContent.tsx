@@ -13,6 +13,12 @@ interface ReplaceContentArgs {
 
 type ReplaceResult = { success: boolean; message: string };
 
+function renderReplaceContentCall(path: string, search_string: string, replacement_string: string, use_regex?: boolean, replace_all?: boolean): string {
+  const mode = use_regex ? "regex" : "literal";
+  const scope = replace_all ? "all" : "first";
+  return `Replacing in ${path} (${mode}, ${scope}) "${search_string.slice(0, 50)}..." → "${replacement_string.slice(0, 50)}..."`;
+}
+
 export const replaceContent: Tool<ReplaceContentArgs, ReplaceResult> = {
   name: "replace_content",
   description: "Replaces a specific block of text in a file with new content. Supports regex patterns and replacing all occurrences.",
@@ -104,10 +110,10 @@ export const replaceContent: Tool<ReplaceContentArgs, ReplaceResult> = {
     }
   },
   renderCall: ({ path: p, search_string, replacement_string, use_regex, replace_all }: ReplaceContentArgs) => (
-    <Text color="cyan">
-      {p} | {use_regex ? "regex" : "literal"} | {replace_all ? "all" : "first"} | "{search_string.slice(0, 50)}..." → "{replacement_string.slice(0, 50)}..."
-    </Text>
+    <Text color="cyan">{renderReplaceContentCall(p, search_string, replacement_string, use_regex, replace_all)}</Text>
   ),
+  renderCallText: ({ path: p, search_string, replacement_string, use_regex, replace_all }: ReplaceContentArgs) =>
+    renderReplaceContentCall(p, search_string, replacement_string, use_regex, replace_all),
   renderResult: (result: ReplaceResult) => (
     <Text color={result.success ? "green" : "red"}>{result.message}</Text>
   )

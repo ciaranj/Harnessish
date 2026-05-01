@@ -42,4 +42,21 @@ describe('searchWeb', () => {
 
         expect(result.success).toBe(true);
     }, 15000);
+
+    // --- renderCallText tests ---
+
+    it('renderCallText should show "Searching web for" with the query', () => {
+        const text = searchWeb.renderCallText({ query: 'how to use vitest' });
+        expect(text).toBe('Searching web for "how to use vitest"');
+    });
+
+    it('renderCallText should handle empty query', () => {
+        const text = searchWeb.renderCallText({ query: '' });
+        expect(text).toBe('Searching web for ""');
+    });
+
+    it('renderCallText should include special characters in the query', () => {
+        const text = searchWeb.renderCallText({ query: 'test & "quotes"' });
+        expect(text).toBe('Searching web for "test & "quotes""');
+    });
 });

@@ -17,6 +17,10 @@ type FileTreeResult = {
   failure_reason?: string;
 };
 
+function renderGetFileTreeCall(dirPath: string, max_depth?: number): string {
+  return `Reading directory tree: ${dirPath} (depth: ${max_depth || 3})`;
+}
+
 export const getFileTree: Tool<GetFileTreeArgs, FileTreeResult> = {
   name: "get_file_tree",
   description: "Returns a recursive directory tree structure.",
@@ -76,8 +80,10 @@ export const getFileTree: Tool<GetFileTreeArgs, FileTreeResult> = {
     }
   },
   renderCall: ({ path: p, max_depth }: GetFileTreeArgs) => (
-    <Text color="cyan">tree: {p} (depth: {max_depth || 3})</Text>
+    <Text color="cyan">{renderGetFileTreeCall(p, max_depth)}</Text>
   ),
+  renderCallText: ({ path: p, max_depth }: GetFileTreeArgs) =>
+    renderGetFileTreeCall(p, max_depth),
   renderResult: (result: FileTreeResult) => (
     <Text color="gray">{result.tree}</Text>
   )

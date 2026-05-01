@@ -174,4 +174,33 @@ describe('replaceContent', () => {
         expect(result.message.toLowerCase()).toContain('missing required');
         expect(result.message).toContain('path');
     });
+
+    // --- renderCallText tests ---
+
+    it('renderCallText should show "Replacing in" with literal mode by default', () => {
+        const text = replaceContent.renderCallText({ path: 'src/utils.ts', search_string: 'old', replacement_string: 'new' });
+        expect(text).toBe('Replacing in src/utils.ts (literal, first) "old..." → "new..."');
+    });
+
+    it('renderCallText should show regex mode when use_regex is true', () => {
+        const text = replaceContent.renderCallText({ path: 'src/utils.ts', search_string: '\\d+', replacement_string: 'NUM', use_regex: true });
+        expect(text).toBe('Replacing in src/utils.ts (regex, first) "\\d+..." → "NUM..."');
+    });
+
+    it('renderCallText should show "all" when replace_all is true', () => {
+        const text = replaceContent.renderCallText({ path: 'src/utils.ts', search_string: 'foo', replacement_string: 'bar', replace_all: true });
+        expect(text).toBe('Replacing in src/utils.ts (literal, all) "foo..." → "bar..."');
+    });
+
+    it('renderCallText should truncate long strings to 50 chars', () => {
+        const longSearch = 'a'.repeat(100);
+        const longReplacement = 'b'.repeat(100);
+        const text = replaceContent.renderCallText({ path: 'src/utils.ts', search_string: longSearch, replacement_string: longReplacement });
+        expect(text).toBe('Replacing in src/utils.ts (literal, first) "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa..." → "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb..."');
+    });
+
+    it('renderCallText should handle mixed regex and replace_all flags', () => {
+        const text = replaceContent.renderCallText({ path: 'file.tsx', search_string: '(?<=<)', replacement_string: '', use_regex: true, replace_all: true });
+        expect(text).toBe('Replacing in file.tsx (regex, all) "(?<=<)..." → "..."');
+    });
 });

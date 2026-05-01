@@ -9,6 +9,10 @@ interface FindFileArgs {
 
 type FindFileResult = { success: boolean; files: string[] };
 
+function renderFindFileCall(pattern: string, path?: string): string {
+  return `Finding "${pattern}" in ${path || '.'}`;
+}
+
 export const findFile: Tool<FindFileArgs, FindFileResult> = {
   name: "find_file",
   description: "Finds files by name or pattern within a directory.",
@@ -63,8 +67,10 @@ export const findFile: Tool<FindFileArgs, FindFileResult> = {
     }
   },
   renderCall: ({ pattern, path: startPath }: FindFileArgs) => (
-    <Text color="cyan">find "{pattern}" in {startPath || '.'}</Text>
+    <Text color="cyan">{renderFindFileCall(pattern, startPath)}</Text>
   ),
+  renderCallText: ({ pattern, path: startPath }: FindFileArgs) =>
+    renderFindFileCall(pattern, startPath),
   renderResult: (result: FindFileResult) => (
     <Text color="gray">
       {result.success && result.files.length > 0

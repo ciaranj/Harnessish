@@ -33,4 +33,21 @@ describe('fetchUrl', () => {
             expect(result.content.length).toBeLessThan(20000);
         }
     }, 15000);
+
+    // --- renderCallText tests ---
+
+    it('renderCallText should show "Fetching" with the URL', () => {
+        const text = fetchUrl.renderCallText({ url: 'https://example.com' });
+        expect(text).toBe('Fetching https://example.com');
+    });
+
+    it('renderCallText should handle URLs with paths and query strings', () => {
+        const text = fetchUrl.renderCallText({ url: 'https://api.example.com/data?key=value' });
+        expect(text).toBe('Fetching https://api.example.com/data?key=value');
+    });
+
+    it('renderCallText should handle empty URL', () => {
+        const text = fetchUrl.renderCallText({ url: '' });
+        expect(text).toBe('Fetching ');
+    });
 });

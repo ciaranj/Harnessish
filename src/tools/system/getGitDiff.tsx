@@ -13,6 +13,11 @@ interface GetGitDiffArgs {
 
 type GitDiffResult = { success: boolean; diff: string };
 
+function renderGetGitDiffCall(path?: string, staged?: boolean): string {
+  const flag = staged ? '--cached ' : '';
+  return `Diffing ${flag}${path || '.'}`;
+}
+
 export const getGitDiff: Tool<GetGitDiffArgs, GitDiffResult> = {
   name: "get_git_diff",
   description: "Returns the differences between the current working directory and the last commit.",
@@ -34,8 +39,10 @@ export const getGitDiff: Tool<GetGitDiffArgs, GitDiffResult> = {
     }
   },
   renderCall: ({ path, staged }: GetGitDiffArgs) => (
-    <Text color="cyan">git diff {staged ? '--cached ' : ''}{path || '.'}</Text>
+    <Text color="cyan">{renderGetGitDiffCall(path, staged)}</Text>
   ),
+  renderCallText: ({ path, staged }: GetGitDiffArgs) =>
+    renderGetGitDiffCall(path, staged),
   renderResult: (result: GitDiffResult) => (
     <Text color="gray">{result.diff}</Text>
   )

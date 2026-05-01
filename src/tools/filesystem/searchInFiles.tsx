@@ -13,6 +13,10 @@ interface SearchInFilesArgs {
 
 type SearchInFilesResult = { success: boolean; matches: string[]; truncated: boolean };
 
+function renderSearchInFilesCall(pattern: string, path?: string): string {
+  return `Searching for "${pattern}" in ${path || '.'}`;
+}
+
 // LLM-friendly output limits: cap per-file matches, total output lines, and line length to avoid context window bloat.
 const MAX_MATCHES_PER_FILE = 5;
 const MAX_TOTAL_OUTPUT_LINES = 30; // includes headers, blank lines, and match content
@@ -123,7 +127,7 @@ export const searchInFiles: Tool<SearchInFilesArgs, SearchInFilesResult> = {
           for (const match of capped) {
             if (totalOutputLines >= MAX_TOTAL_OUTPUT_LINES) break;
             const display = match.length > MAX_LINE_LENGTH ? `${match.substring(0, MAX_LINE_LENGTH)}[...]` : match;
-          outputLines.push(`  ${display}`);
+            outputLines.push(`  ${display}`);
             totalOutputLines++;
           }
           outputLines.push('');
@@ -138,8 +142,10 @@ export const searchInFiles: Tool<SearchInFilesArgs, SearchInFilesResult> = {
     }
   },
   renderCall: ({ pattern, path: searchPath }: SearchInFilesArgs) => (
-    <Text color="cyan">grep -rnE "{pattern}" {searchPath || '.'}</Text>
+    <Text color="cyan">{renderSearchInFilesCall(pattern, searchPath)}</Text>
   ),
+  renderCallText: ({ pattern, path: searchPath }: SearchInFilesArgs) =>
+    renderSearchInFilesCall(pattern, searchPath),
   renderResult: (result: SearchInFilesResult) => (
     <Text color="gray">
       {result.success && result.matches.length > 0

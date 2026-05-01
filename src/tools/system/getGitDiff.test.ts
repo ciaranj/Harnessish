@@ -45,4 +45,26 @@ describe('getGitDiff', () => {
             // Expected behavior is to resolve, not reject
         }
     });
+
+    // --- renderCallText tests ---
+
+    it('renderCallText should show "Diffing" with default path', () => {
+        const text = getGitDiff.renderCallText({});
+        expect(text).toBe('Diffing .');
+    });
+
+    it('renderCallText should include the file path when provided', () => {
+        const text = getGitDiff.renderCallText({ path: 'package.json' });
+        expect(text).toBe('Diffing package.json');
+    });
+
+    it('renderCallText should show --cached flag when staged is true', () => {
+        const text = getGitDiff.renderCallText({ staged: true });
+        expect(text).toBe('Diffing --cached .');
+    });
+
+    it('renderCallText should combine path and staged flags', () => {
+        const text = getGitDiff.renderCallText({ path: 'src/utils.ts', staged: true });
+        expect(text).toBe('Diffing --cached src/utils.ts');
+    });
 });

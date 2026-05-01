@@ -87,4 +87,26 @@ describe('writeToFile', () => {
         const writtenContent = await readFile(testPath, 'utf-8');
         expect(writtenContent).toBe(content);
     });
+
+    // --- renderCallText tests ---
+
+    it('renderCallText should show "Writing" for default (overwrite) mode', () => {
+        const text = writeToFile.renderCallText({ path: 'main.py', content: 'hello' });
+        expect(text).toBe('Writing main.py (5 bytes)');
+    });
+
+    it('renderCallText should show "Appending to" when mode is append', () => {
+        const text = writeToFile.renderCallText({ path: 'log.txt', content: 'new line', mode: 'append' });
+        expect(text).toBe('Appending to log.txt (8 bytes)');
+    });
+
+    it('renderCallText should show "Writing" when mode is overwrite explicitly', () => {
+        const text = writeToFile.renderCallText({ path: 'data.json', content: '{}', mode: 'overwrite' });
+        expect(text).toBe('Writing data.json (2 bytes)');
+    });
+
+    it('renderCallText should report correct byte length for multi-byte content', () => {
+        const text = writeToFile.renderCallText({ path: 'unicode.txt', content: 'héllo' });
+        expect(text).toBe('Writing unicode.txt (5 bytes)');
+    });
 });

@@ -115,9 +115,26 @@ describe('getFileTree', () => {
         expect(mIndex).toBeLessThan(zIndex);
     });
 
-    it('should handle non-existent directory gracefully', async () => {
+     it('should handle non-existent directory gracefully', async () => {
         const result = await getFileTree.execute({ path: 'nonexistent_directory_12345' });
 
         expect(result.success).toBe(true);
+    });
+
+    // --- renderCallText tests ---
+
+    it('renderCallText should show "Reading directory tree" with default depth', () => {
+        const text = getFileTree.renderCallText({ path: 'src' });
+        expect(text).toBe('Reading directory tree: src (depth: 3)');
+    });
+
+    it('renderCallText should include custom depth when provided', () => {
+        const text = getFileTree.renderCallText({ path: '.', max_depth: 5 });
+        expect(text).toBe('Reading directory tree: . (depth: 5)');
+    });
+
+    it('renderCallText should handle root path', () => {
+        const text = getFileTree.renderCallText({ path: '/' });
+        expect(text).toBe('Reading directory tree: / (depth: 3)');
     });
 });
