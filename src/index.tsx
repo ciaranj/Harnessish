@@ -2,6 +2,7 @@ import { render } from 'ink';
 import { App } from './ui/App.js';
 import { makeCallToLLM } from './core/llm.js';
 import { loadSession, createSession, SessionStore } from './core/session.js';
+import { GuardrailConfigManager, createDefaultConfigStore } from './core/config/index.js';
 
 async function main() {
     let store: SessionStore;
@@ -20,7 +21,12 @@ async function main() {
         store = new SessionStore(createSession());
     }
 
-    render(<App makeCallToLLM={makeCallToLLM} store={store} />);
+    // Load guardrail config early so tools can check permissions.
+    const configStore = createDefaultConfigStore();
+    const guardrails = new GuardrailConfigManager(configStore);
+    console.log('Guardrail config loaded.');
+
+    render(<App makeCallToLLM={makeCallToLLM} store={store} guardrails={guardrails} />);
 }
 
 main();

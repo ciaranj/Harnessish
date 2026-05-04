@@ -5,6 +5,7 @@ import { Message, Stats } from '../core/types.js';
 import { SessionStore } from '../core/session.js';
 import { CompactionStrategy, RunningMemoryStrategy } from '../core/compaction.js';
 import { tools as defaultTools, toolsByName } from '../tools/index.js';
+import type { GuardrailConfigManager } from '../core/config/index.js';
 import { LLAMACPP_HEALTH_URL } from '../constants.js';
 
 // --- UI Helpers ---
@@ -115,12 +116,14 @@ interface AppProps {
         setStats: React.Dispatch<React.SetStateAction<Stats>>,
         store: SessionStore,
         compactionStrategy: CompactionStrategy,
+        guardrails: GuardrailConfigManager,
         signal?: AbortSignal
     ) => Promise<void>;
     store: SessionStore;
+    guardrails: GuardrailConfigManager;
 }
 
-export const App = ({ makeCallToLLM, store }: AppProps) => {
+export const App = ({ makeCallToLLM, store, guardrails }: AppProps) => {
     const initialMessages = store.getMessages();
     const messagesRef = useRef<Message[]>(initialMessages);
     const [messages, setMessages] = useState<Message[]>(initialMessages);
@@ -275,7 +278,7 @@ export const App = ({ makeCallToLLM, store }: AppProps) => {
 
         try {
             const currentTools = tools.length > 0 ? [...tools] : [];
-            await makeCallToLLM(value, updateMessages, messagesRef, currentTools, setStats, store, compactionStrategy, abortControllerRef.current.signal);
+            await makeCallToLLM(value, updateMessages, messagesRef, currentTools, setStats, store, compactionStrategy, guardrails, abortControllerRef.current.signal);
             await persistSession();
         } catch (e) {
             if (e instanceof Error && e.message === 'Aborted') setNotification("Turn abandoned.");

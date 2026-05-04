@@ -1,7 +1,10 @@
 import React from 'react';
 
+import type { GuardrailConfigManager } from '../core/config/index.js';
+
 export interface ToolCallContext {
   abortSignal?: AbortSignal;
+  guardrails?: GuardrailConfigManager;
 }
 
 export interface Tool<TArgs, TResult> {

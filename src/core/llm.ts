@@ -6,6 +6,7 @@ import { CompactionStrategy, NoOpCompactionStrategy } from './compaction.js';
 import { buildLLMPayload } from '../utils.js';
 import { LLAMACPP_CHAT_URL } from '../constants.js';
 import { toolsByName, toolsToOpenAITools } from '../tools/index.js';
+import type { GuardrailConfigManager } from '../core/config/index.js';
 
 let mcpClient: any = null;
 let mcpTransport: any = null;
@@ -21,10 +22,14 @@ export async function connectToServer(url: string): Promise<boolean> {
     } catch (e) { return false; }
 }
 
-export async function dispatchTool(name: string, args: any): Promise<string> {
+export async function dispatchTool(
+    name: string,
+    args: any,
+    guardrails?: GuardrailConfigManager
+): Promise<string> {
     const tool = toolsByName[name];
     if (tool) {
-        const result = await tool.execute(args);
+        const result = await tool.execute(args, { guardrails });
         return typeof result === 'string' ? result : JSON.stringify(result, null, 2);
     }
     if (mcpClient) {
@@ -42,6 +47,7 @@ export async function makeCallToLLM(
     setStats: React.Dispatch<React.SetStateAction<Stats>>,
     store: SessionStore,
     compactionStrategy: CompactionStrategy,
+    guardrails: GuardrailConfigManager,
     signal?: AbortSignal
 ) {
     let loopCount = 0;
@@ -153,7 +159,7 @@ export async function makeCallToLLM(
 
                         for (const tc of toolCalls) {
                             const args = JSON.parse(tc.function.arguments);
-                            const result = await dispatchTool(tc.function.name, args);
+                            const result = await dispatchTool(tc.function.name, args, guardrails);
                             updateMessages(msgs => [...msgs, { role: 'tool', tool_call_id: tc.id, content: String(result) }]);
                         }
                         didToolCall = true;
