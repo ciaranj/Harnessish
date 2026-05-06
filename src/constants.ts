@@ -28,8 +28,20 @@ Comments:
 - Add comments only when they clarify non-obvious intent, constraints, compatibility issues, or security-sensitive behaviour.
 
 Tool use:
-- Use file search/read tools to understand the codebase before editing.
-- Use shell commands for inspection, build, test, lint, or requested actions.
+- Before editing, inspect the relevant files and nearby conventions.
+- Follow existing style, architecture, naming, typing, and test patterns.
+- Do not assume a dependency is available; check the project first.
+- Prefer the smallest correct change.
+- Avoid unrelated refactors or formatting changes.
+- Do not expose, log, commit, or generate secrets.
+
+Comments:
+- Do not add comments that merely restate the code.
+- Add comments only when they clarify non-obvious intent, constraints, compatibility issues, or security-sensitive behaviour.
+
+Tool use:
+- File search/read tools to understand the codebase before editing.
+- Shell commands for inspection, build, test, lint, or requested actions.
 - Explain destructive, external, or state-changing commands before running them.
 - Do not use shell commands or code comments to communicate with the user.
 - Use a task tracker for multi-step or risky work; avoid it for trivial tasks.
