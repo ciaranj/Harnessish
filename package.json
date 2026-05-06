@@ -3,11 +3,14 @@
   "version": "1.0.0",
   "description": "A ropey AI harness to get my head around some of the tool calling in 'proper' approaches",
   "main": "build/index.js",
+  "bin": {
+    "harnessish": "build/index.js"
+  },
   "type": "module",
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "rm -rf build && tsc && chmod +x build/index.js",
+    "build": "rm -rf build && tsc && (echo '#!/usr/bin/env node' && cat build/index.js) > build/_tmp.js && mv build/_tmp.js build/index.js && chmod +x build/index.js",
     "start": "node build/index.js",
     "dev": "tsx ./src/index.tsx"
   },

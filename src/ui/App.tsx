@@ -6,7 +6,9 @@ import { SessionStore } from '../core/session.js';
 import { CompactionStrategy, RunningMemoryStrategy } from '../core/compaction.js';
 import { tools as defaultTools, toolsByName } from '../tools/index.js';
 import type { GuardrailConfigManager } from '../core/config/index.js';
-import { LLAMACPP_HEALTH_URL } from '../constants.js';
+import { AppConfig } from '../core/config/index.js';
+
+const appConfig = AppConfig.getInstance();
 
 // --- UI Helpers ---
 
@@ -219,7 +221,8 @@ export const App = ({ makeCallToLLM, store, guardrails }: AppProps) => {
 
     useEffect(() => {
         const init = async () => {
-            const healthy = await fetch(LLAMACPP_HEALTH_URL).then(r => r.ok).catch(() => false);
+            const healthUrl = new URL('/health', appConfig.getString('LLAMACPP_URL', 'http://localhost:8080/'));
+            const healthy = await fetch(String(healthUrl)).then(r => r.ok).catch(() => false);
             if (!healthy) console.log("Ollama not found.");
         };
         init();

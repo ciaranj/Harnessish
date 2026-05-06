@@ -1,5 +1,8 @@
 import { Message } from './core/types.js';
 import { systemPrompt } from './constants.js';
+import { AppConfig } from './core/config/index.js';
+
+const config = AppConfig.getInstance();
 
 export interface LLMPayload {
     model: string | undefined;
@@ -15,9 +18,9 @@ export interface LLMPayload {
 export function buildLLMPayload(messages: Message[], tools: any[]): LLMPayload {
     // No-Op filter currently
     const filteredMessages = messages.filter((message) => true);
- 
+
     return {
-        model: process.env.MODEL,
+        model: config.getString('MODEL'),
         messages: [
             { role: 'system', content: systemPrompt },
             ...filteredMessages

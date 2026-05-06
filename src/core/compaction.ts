@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Message, Stats } from './types.js';
-import { MAX_CONTEXT_SIZE, AUTO_COMPACTION_THRESHOLD } from '../constants.js';
+import { AppConfig } from './config/index.js';
+
+const appConfig = AppConfig.getInstance();
 
 export interface CompactionConfig {
     /** When context reaches this fraction of MAX_CONTEXT_SIZE, trigger compaction (default: 0.8) */
@@ -40,10 +42,10 @@ export class RunningMemoryStrategy implements CompactionStrategy {
 
     constructor(config?: CompactionConfig) {
         this.config = {
-            threshold: config?.threshold ?? AUTO_COMPACTION_THRESHOLD,
+            threshold: config?.threshold ?? appConfig.getFloat('AUTO_COMPACTION_THRESHOLD', 0.8),
             recentTurns: config?.recentTurns ?? 6,
             maxToolOutputSize: config?.maxToolOutputSize ?? 2000,
-            maxContextSize: config?.maxContextSize ?? MAX_CONTEXT_SIZE,
+            maxContextSize: config?.maxContextSize ?? appConfig.getInt('MAX_CONTEXT_SIZE', 262144),
         };
     }
 

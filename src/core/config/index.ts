@@ -186,6 +186,109 @@ export function createDefaultConfigStore(opts?: {
 }
 
 // ---------------------------------------------------------------------------
+// AppConfig — singleton that seeds global config from .env / .env.example
+// ---------------------------------------------------------------------------
+
+/** Parse a .env-style file into key-value pairs. */
+function parseEnv(content: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    let value = trimmed.slice(eqIdx + 1).trim();
+    // Remove surrounding quotes
+    if ((value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+/** Read defaults: tries .env first, falls back to .env.example. */
+function getDefaults(): Record<string, string> {
+  const cwd = process.cwd();
+  for (const fileName of ['.env', '.env.example']) {
+    try {
+      const content = fs.readFileSync(path.join(cwd, fileName), 'utf-8');
+      const parsed = parseEnv(content);
+      if (Object.keys(parsed).length > 0) return parsed;
+    } catch {
+      // file not found or unreadable — try next
+    }
+  }
+  return {};
+}
+
+/** Singleton that initializes the config store and seeds global config. */
+export class AppConfig {
+  private static _instance: AppConfig | null = null;
+
+  static getInstance(): AppConfig {
+    if (!AppConfig._instance) {
+      AppConfig._instance = new AppConfig();
+    }
+    return AppConfig._instance;
+  }
+
+  private readonly store: ConfigStore;
+
+  private constructor() {
+    this.store = createDefaultConfigStore();
+    this._init();
+  }
+
+  private _init(): void {
+    const globalPath = path.join(
+      process.env.HOME ?? process.env.USERPROFILE ?? '.',
+      '.h', 'config.json'
+    );
+
+    if (!fs.existsSync(globalPath)) {
+      // Seed global config from .env / .env.example defaults
+      const defaults = getDefaults();
+      const seedConfig: RawConfig = {
+        ...defaults,
+        version: 1,
+        updatedAt: new Date().toISOString(),
+      };
+      this.store.set(seedConfig, 'global');
+      this.store.save('global');
+    }
+
+    // Load all scopes into memory (including the seeded global config)
+    this.store.load();
+  }
+
+  /** Get a raw value from the merged config. */
+  get(key: string): unknown {
+    return this.store.get()[key];
+  }
+
+  getString(key: string, fallback?: string): string | undefined {
+    const val = this.store.get()[key];
+    if (val === undefined) return fallback;
+    return String(val);
+  }
+
+  getInt(key: string, fallback?: number): number {
+    const val = this.store.get()[key];
+    if (val === undefined) return fallback ?? 0;
+    return parseInt(String(val), 10);
+  }
+
+  getFloat(key: string, fallback?: number): number {
+    const val = this.store.get()[key];
+    if (val === undefined) return fallback ?? 0;
+    return parseFloat(String(val));
+  }
+}
+
+// ---------------------------------------------------------------------------
 // GuardrailConfigManager — domain layer built on ConfigStore
 // ---------------------------------------------------------------------------
 

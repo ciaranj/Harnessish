@@ -1,13 +1,3 @@
-import { loadEnvFile } from 'node:process';
-
-loadEnvFile();
-
-export const LLAMACPP_HEALTH_URL = new URL('/health', process.env.LLAMACPP_URL!);
-export const LLAMACPP_CHAT_URL = new URL('/v1/chat/completions', process.env.LLAMACPP_URL!);
-export const SEARXNG_URL = process.env.SEARXNG_URL;
-export const MAX_CONTEXT_SIZE = parseInt(process.env.MAX_CONTEXT_SIZE || '262144', 10);
-export const AUTO_COMPACTION_THRESHOLD = parseFloat(process.env.AUTO_COMPACTION_THRESHOLD || '0.8');
-
 export const systemPrompt = `You are an AI coding assistant called Harnessish.
 
 Your role is to help with software engineering tasks: explaining code, debugging, implementing changes, refactoring, writing tests, reviewing code, improving reliability, and supporting defensive security work.

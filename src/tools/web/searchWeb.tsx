@@ -1,4 +1,6 @@
-import { SEARXNG_URL } from '../../constants.js';
+import { AppConfig } from '../../core/config/index.js';
+
+const appConfig = AppConfig.getInstance();
 import React from 'react';
 import { Text } from 'ink';
 import { Tool, ToolCallContext } from '../types.js';
@@ -31,7 +33,8 @@ export const searchWeb: Tool<SearchWebArgs, SearchWebResult> = {
   } as const,
   execute: async ({ query }: SearchWebArgs, _ctx?: ToolCallContext): Promise<SearchWebResult> => {
     try {
-      const url = new URL(`${SEARXNG_URL}/search`);
+      const baseUrl = appConfig.getString('SEARXNG_URL', 'http://localhost:8888/');
+      const url = new URL('/search', baseUrl);
       url.searchParams.append('q', query);
       url.searchParams.append('format', 'json');
       const res = await fetch(url.toString());

@@ -4,7 +4,9 @@ import { Message, Stats } from './types.js';
 import { SessionStore } from './session.js';
 import { CompactionStrategy, NoOpCompactionStrategy } from './compaction.js';
 import { buildLLMPayload } from '../utils.js';
-import { LLAMACPP_CHAT_URL } from '../constants.js';
+import { AppConfig } from './config/index.js';
+
+const appConfig = AppConfig.getInstance();
 import { toolsByName, toolsToOpenAITools } from '../tools/index.js';
 import type { GuardrailConfigManager } from '../core/config/index.js';
 
@@ -75,7 +77,8 @@ export async function makeCallToLLM(
         const payload = buildLLMPayload(messagesRef.current, toolsToOpenAITools(tools));
         const body = JSON.stringify(payload);
 
-        const res = await fetch(`${LLAMACPP_CHAT_URL}`, {
+        const chatUrl = new URL('/v1/chat/completions', appConfig.getString('LLAMACPP_URL', 'http://localhost:8080/'));
+        const res = await fetch(String(chatUrl), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: body,
