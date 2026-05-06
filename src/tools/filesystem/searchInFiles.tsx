@@ -35,7 +35,10 @@ export const searchInFiles: Tool<SearchInFilesArgs, SearchInFilesResult> = {
   } as const,
   execute: async ({ pattern, path: searchPath = '.' }: SearchInFilesArgs, _ctx?: ToolCallContext): Promise<SearchInFilesResult> => {
     try {
-      const { stdout, stderr } = await execAsyncLarge(`grep -rnE --no-messages "${pattern}" ${searchPath}`);
+      const excludedDirs = ['.h', '.git'];
+      const excludeFlags = excludedDirs.map(dir => `--exclude-dir=${dir}`).join(' ');
+      const cmd = `grep -rnE --no-messages ${excludeFlags} "${pattern}" ${searchPath}`;
+      const { stdout, stderr } = await execAsyncLarge(cmd);
       if (!stdout.trim()) return { success: true, matches: [], truncated: false };
 
       const rawLines = stdout.trim().split('\n');

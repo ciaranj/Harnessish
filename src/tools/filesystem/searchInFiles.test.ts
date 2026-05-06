@@ -35,6 +35,9 @@ describe('searchInFiles', () => {
     });
 
     it('should default to current directory when path not provided', async () => {
+        // The test greps from '.' which searches the entire repo, including .h/sessions
+        // If any session file happens to contain the pattern, the output overflows the 10MB buffer.
+        // The grep also searches node_modules, which is slow and produces huge output.
         const result = await searchInFiles.execute({ pattern: 'searchInFiles' });
 
         expect(result.success).toBe(true);
