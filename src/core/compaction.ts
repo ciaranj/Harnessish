@@ -2,6 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Message, Stats } from './types.js';
 import { AppConfig } from './config/index.js';
+import { SessionStore } from './session.js';
+import { randomUUID } from 'node:crypto';
+
 
 const appConfig = AppConfig.getInstance();
 
@@ -23,17 +26,17 @@ export interface CompactionResult {
 }
 
 export interface CompactionStrategy {
-    shouldTrigger(messages: Message[], stats: Stats): boolean;
-    doCompaction(messages: Message[], stats: Stats): Promise<CompactionResult>;
+    shouldTrigger(store: SessionStore): boolean;
+    doCompaction(store: SessionStore): Promise<CompactionResult>;
 }
 
 export class NoOpCompactionStrategy implements CompactionStrategy {
-    shouldTrigger(_messages: Message[], _stats: Stats): boolean {
+    shouldTrigger(_store: SessionStore): boolean {
         return false;
     }
 
-    async doCompaction(messages: Message[], _stats: Stats): Promise<CompactionResult> {
-        return { messages };
+    async doCompaction(store: SessionStore): Promise<CompactionResult> {
+        return { messages: store.getMessages() };
     }
 }
 
@@ -43,27 +46,32 @@ export class RunningMemoryStrategy implements CompactionStrategy {
     constructor(config?: CompactionConfig) {
         this.config = {
             threshold: config?.threshold ?? appConfig.getFloat('AUTO_COMPACTION_THRESHOLD', 0.8),
-            recentTurns: config?.recentTurns ?? 6,
+            recentTurns: config?.recentTurns ?? 5,
             maxToolOutputSize: config?.maxToolOutputSize ?? 2000,
             maxContextSize: config?.maxContextSize ?? appConfig.getInt('MAX_CONTEXT_SIZE', 262144),
         };
     }
 
-    shouldTrigger(messages: Message[], stats: Stats): boolean {
+    shouldTrigger(store: SessionStore): boolean {
+        const snapshot = store.getSnapshot();
         const thresholdBytes = this.config.threshold * this.config.maxContextSize;
-        return stats.contextSize > thresholdBytes;
+        return (snapshot.stats?.contextSize ?? 0) > thresholdBytes;
     }
 
-    async doCompaction(
-        messages: Message[],
-        _stats: Stats,
-    ): Promise<CompactionResult> {
+ 
+
+    async doCompaction(store: SessionStore): Promise<CompactionResult> {
+        const messages = store.getMessages();
         if (messages.length <= this.config.recentTurns * 2) {
-            // Not enough messages to warrant compaction
             return { messages };
         }
 
-        // 2. Keep recent turns uncompressed — find the Nth-to-last assistant message
+        const outputsDir = store.compactedToolOutputsDirPath();
+        if (!fs.existsSync(outputsDir)) {
+            fs.mkdirSync(outputsDir, { recursive: true });
+        }
+
+        // Keep recent turns uncompressed — find the Nth-to-last assistant message
         let recentStartIndex = messages.length;
         let assistantCount = 0;
         for (let i = messages.length - 1; i >= 0; i--) {
@@ -79,55 +87,41 @@ export class RunningMemoryStrategy implements CompactionStrategy {
         const recentMessages = messages.slice(recentStartIndex);
         const olderMessages = messages.slice(0, recentStartIndex);
 
-        // 3. Compress older messages: drop reasoning, externalize large tool outputs
+        // Compress older messages: drop reasoning, externalize large tool outputs
         const compressed: Message[] = [];
-        let contextMdContent = '';
-        let toolOutputCounter = 1;
 
         for (const msg of olderMessages) {
             if (msg.role === 'user') {
-                // Keep user messages as-is — they define conversation intent
                 compressed.push(msg);
             } else if (msg.role === 'assistant') {
-                // Keep text response, drop reasoning content for older turns
                 const cleanMsg: Message = {
                     role: 'assistant',
                     content: msg.content ?? '',
                 };
-                if( cleanMsg.content ) {
+                if (cleanMsg.content) {
                     compressed.push(cleanMsg);
                 }
             } else if (msg.role === 'tool') {
                 const contentLength = msg.content?.length ?? 0;
-                if (contentLength > this.config.maxToolOutputSize) {
-                    // Externalize large tool output to CONTEXT.md
-                    const ts = new Date().toISOString();
-                    contextMdContent += `## Tool Output #${toolOutputCounter} (at ${ts})\n${msg.content}\n---\n\n`;
-                    toolOutputCounter++;
+                if (contentLength > this.config.maxToolOutputSize && !msg.content?.startsWith("[Externalized to session context → ")) {
+                    const outputId = `${randomUUID()}`;
+                    const outputPath = path.join(outputsDir, `${outputId}.txt`);
+                    fs.writeFileSync(outputPath, msg.content ?? '', 'utf-8');
 
-                    // Replace with a reference line
                     compressed.push({
-                        role: 'assistant',
-                        content: `[Tool output externalized to CONTEXT.md (${contentLength} bytes)]`,
+                        role: 'tool',
+                        content: `[Externalized to session context → use retrieve_tool_output("${outputId}") to retrieve]`,
+                        tool_call_id: msg.tool_call_id,
                     });
                 } else {
-                    // Small tool output stays in context as-is
                     compressed.push(msg);
                 }
             }
         }
 
-        // 4. Write CONTEXT.md if we have externalized content
-        let contextMdPath: string | undefined;
-        if (contextMdContent) {
-            const projectRoot = process.cwd();
-            contextMdPath = path.join(projectRoot, 'CONTEXT.md');
-            fs.appendFileSync(contextMdPath, contextMdContent, 'utf-8');
-        }
-
-        // 5. Combine: system + compressed older + recent uncompressed (full fidelity)
+        // Combine: compressed older + recent uncompressed (full fidelity)
         const newMessages = [...compressed, ...recentMessages];
 
-        return { messages: newMessages, contextMdPath };
+        return { messages: newMessages, contextMdPath: outputsDir };
     }
 }

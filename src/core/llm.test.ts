@@ -1,11 +1,19 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { NoOpCompactionStrategy } from './compaction.js';
-import { Message, Stats } from './types.js';
+import { Message } from './types.js';
+import { SessionStore } from './session.js';
+import { createSession } from './session.js';
+
+function makeStore(messages: Message[]): SessionStore {
+    const session = createSession();
+    session.messages = messages;
+    return new SessionStore(session);
+}
 
 describe('NoOpCompactionStrategy', () => {
     let strategy: NoOpCompactionStrategy;
 
-    beforeEach(() => {
+    beforeAll(() => {
         strategy = new NoOpCompactionStrategy();
     });
 
@@ -15,29 +23,15 @@ describe('NoOpCompactionStrategy', () => {
                 { role: 'user', content: 'test' },
                 { role: 'assistant', content: 'response' }
             ];
-            const stats: Stats = {
-                tokens: 100,
-                tps: 10,
-                status: 'generating',
-                contextSize: 50,
-                cachedContextSize: 25
-            };
 
-            const result = strategy.shouldTrigger(messages, stats);
+            const result = strategy.shouldTrigger(makeStore(messages));
             expect(result).toBe(false);
         });
 
         it('should return false even with many messages', () => {
             const messages: Message[] = Array(100).fill({ role: 'user', content: 'test' });
-            const stats: Stats = {
-                tokens: 10000,
-                tps: 0,
-                status: 'idle',
-                contextSize: 5000,
-                cachedContextSize: 2500
-            };
 
-            const result = strategy.shouldTrigger(messages, stats);
+            const result = strategy.shouldTrigger(makeStore(messages));
             expect(result).toBe(false);
         });
     });
@@ -49,44 +43,14 @@ describe('NoOpCompactionStrategy', () => {
                 { role: 'assistant', content: 'reply' },
                 { role: 'user', content: 'second' }
             ];
-            const stats: Stats = {
-                tokens: 50,
-                tps: 5,
-                status: 'idle',
-                contextSize: 20,
-                cachedContextSize: 10
-            };
 
-            const result = await strategy.doCompaction(messages, stats);
+            const result = await strategy.doCompaction(makeStore(messages));
             expect(result.messages).toEqual(messages);
         });
 
         it('should not modify empty message list', async () => {
-            const messages: Message[] = [];
-            const stats: Stats = {
-                tokens: 0,
-                tps: 0,
-                status: 'idle',
-                contextSize: 0,
-                cachedContextSize: 0
-            };
-
-            const result = await strategy.doCompaction(messages, stats);
+            const result = await strategy.doCompaction(makeStore([]));
             expect(result.messages).toEqual([]);
-        });
-
-        it('should not return any stats changes', async () => {
-            const messages: Message[] = [{ role: 'user', content: 'test' }];
-            const stats: Stats = {
-                tokens: 10,
-                tps: 2,
-                status: 'thinking',
-                contextSize: 5,
-                cachedContextSize: 3
-            };
-
-            const result = await strategy.doCompaction(messages, stats);
-            expect(result.stats).toBeUndefined();
         });
 
         it('should handle messages with all fields', async () => {
@@ -103,15 +67,8 @@ describe('NoOpCompactionStrategy', () => {
                     content: 'tool result'
                 }
             ];
-            const stats: Stats = {
-                tokens: 100,
-                tps: 10,
-                status: 'tool_calling',
-                contextSize: 50,
-                cachedContextSize: 25
-            };
 
-            const result = await strategy.doCompaction(messages, stats);
+            const result = await strategy.doCompaction(makeStore(messages));
             expect(result.messages).toEqual(messages);
         });
     });

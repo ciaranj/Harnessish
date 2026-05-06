@@ -16,21 +16,52 @@ export type Session = {
     stats?: SessionStats;
 };
 
-const SESSION_DIRNAME = '.h/sessions';
-const SESSION_FILENAME = 'session.json';
+const SESSIONS_ROOT = '.h/sessions';
 const BACKUP_SUFFIX = '.bak';
 const TEMP_SUFFIX = '.tmp';
-const FULL_HISTORY_FILENAME = 'session_full_history.json';
 
-async function ensureSessionDir(directory: string): Promise<void> {
-    const sessionDir = path.join(directory, SESSION_DIRNAME);
-    if (!fs.existsSync(sessionDir)) {
-        await fs.promises.mkdir(sessionDir, { recursive: true });
-    }
+/** Resolve the directory path for a session by ID. */
+function sessionDirPath(sessionId: string, cwd: string = process.cwd()): string {
+    return path.join(cwd, SESSIONS_ROOT, sessionId);
 }
 
-function getSessionFilePath(directory: string = process.cwd()): string {
-    return path.join(directory, SESSION_DIRNAME, SESSION_FILENAME);
+/** Resolve the session.json file path for a session ID. */
+function sessionFilePath(sessionId: string, cwd: string = process.cwd()): string {
+    return path.join(sessionDirPath(sessionId, cwd), 'session.json');
+}
+
+/** Find the most recently updated non-empty session by scanning SESSIONS_ROOT.
+ * Skips empty sessions (e.g. freshly reset ones) so that restarting
+ * resumes the previous session with messages. */
+export function findActiveSessionId(cwd: string = process.cwd()): string | null {
+    const sessionsDir = path.join(cwd, SESSIONS_ROOT);
+    if (!fs.existsSync(sessionsDir)) {
+        return null;
+    }
+    let latest = '';
+    let latestTime = 0;
+    try {
+        const entries = fs.readdirSync(sessionsDir);
+        for (const entry of entries) {
+            const sessionId = entry;
+            const filePath = sessionFilePath(sessionId, cwd);
+            if (fs.existsSync(filePath)) {
+                const mtime = fs.statSync(filePath).mtimeMs;
+                if (mtime <= latestTime) continue;
+
+                // Check that the session has at least one message
+                const data = fs.readFileSync(filePath, 'utf-8');
+                const parsed = JSON.parse(data);
+                if (!parsed.messages || parsed.messages.length === 0) continue;
+
+                latestTime = mtime;
+                latest = sessionId;
+            }
+        }
+    } catch {
+        return null;
+    }
+    return latest || null;
 }
 
 export function createSession(directory: string = process.cwd()): Session {
@@ -78,13 +109,19 @@ async function loadBackupFromFile(filePath: string): Promise<Session | null> {
         
         return parsed as Session;
     } catch (err) {
-        console.error(`Failed to parse backup file: ${err}`);
+        console.error(`Failed to parse backup session file: ${err}`);
         return null;
     }
 }
 
 export async function loadSession(directory: string = process.cwd()): Promise<Session | null> {
-    const filePath = getSessionFilePath(directory);
+    // Find the most recently updated session
+    const activeSessionId = findActiveSessionId(directory);
+    if (!activeSessionId) {
+        return null;
+    }
+
+    const filePath = sessionFilePath(activeSessionId, directory);
     
     await ensureSessionDir(directory);
     
@@ -103,10 +140,10 @@ export async function loadSession(directory: string = process.cwd()): Promise<Se
 }
 
 export async function saveSession(session: Session, directory: string = process.cwd()): Promise<void> {
-    const filePath = getSessionFilePath(directory);
+    const filePath = sessionFilePath(session.id, directory);
     const tempPath = filePath + TEMP_SUFFIX;
     
-    await ensureSessionDir(directory);
+    await ensureSessionDirForId(session.id, directory);
     
     session.updatedAt = new Date().toISOString();
     session.version += 1;
@@ -116,22 +153,39 @@ export async function saveSession(session: Session, directory: string = process.
     fs.renameSync(tempPath, filePath);
 }
 
+async function ensureSessionDirForId(sessionId: string, directory: string = process.cwd()): Promise<void> {
+    const sessionDir = sessionDirPath(sessionId, directory);
+    if (!fs.existsSync(sessionDir)) {
+        await fs.promises.mkdir(sessionDir, { recursive: true });
+    }
+}
+
+async function ensureSessionDir(directory: string): Promise<void> {
+    const sessionsDir = path.join(directory, SESSIONS_ROOT);
+    if (!fs.existsSync(sessionsDir)) {
+        await fs.promises.mkdir(sessionsDir, { recursive: true });
+    }
+}
+
 export async function resetSession(directory: string = process.cwd()): Promise<Session> {
-    const filePath = getSessionFilePath(directory);
+    const activeSessionId = findActiveSessionId(directory);
     
     try {
-        if (fs.existsSync(filePath)) {
-            const oldData = fs.readFileSync(filePath, 'utf-8');
-            const oldSession = JSON.parse(oldData) as Session;
-            
-            const archivePath = path.join(
-                path.dirname(filePath),
-                `session_archive_${oldSession.id}_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
-            );
-            fs.writeFileSync(archivePath, oldData);
-            
-            if (fs.existsSync(filePath + BACKUP_SUFFIX)) {
-                fs.unlinkSync(filePath + BACKUP_SUFFIX);
+        if (activeSessionId) {
+            const filePath = sessionFilePath(activeSessionId, directory);
+            if (fs.existsSync(filePath)) {
+                const oldData = fs.readFileSync(filePath, 'utf-8');
+                const oldSession = JSON.parse(oldData) as Session;
+                
+                const archivePath = path.join(
+                    sessionDirPath(activeSessionId, directory),
+                    `archive_${oldSession.id}_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+                );
+                fs.writeFileSync(archivePath, oldData);
+                
+                if (fs.existsSync(filePath + BACKUP_SUFFIX)) {
+                    fs.unlinkSync(filePath + BACKUP_SUFFIX);
+                }
             }
         }
     } catch (err) {
@@ -144,7 +198,7 @@ export async function resetSession(directory: string = process.cwd()): Promise<S
 }
 
 export async function trySaveSession(session: Session, directory: string = process.cwd()): Promise<{ saved: boolean; error?: Error }> {
-    const filePath = getSessionFilePath(directory);
+    const filePath = sessionFilePath(session.id, directory);
     const tempPath = filePath + TEMP_SUFFIX;
 
     try {
@@ -152,36 +206,37 @@ export async function trySaveSession(session: Session, directory: string = proce
         const existingSession = JSON.parse(existingData) as Session;
 
         if (existingSession.version !== session.version - 1) {
-            return { saved: false, error: new Error('Version mismatch - session was modified by another process') };
+            return { saved: false, error: new Error('Version mismatch - session was modified by another process') }
         }
 
         await saveSession(session, directory);
-        return { saved: true };
+        return { saved: true }
     } catch (err) {
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
             try {
                 const data = JSON.stringify(session, null, 2);
                 fs.writeFileSync(tempPath, data, 'utf-8');
                 fs.renameSync(tempPath, filePath);
-                return { saved: true };
+                return { saved: true }
             } catch (writeErr) {
-                return { saved: false, error: writeErr as Error };
+                return { saved: false, error: writeErr as Error }
             }
         }
-        return { saved: false, error: err as Error };
+        return { saved: false, error: err as Error }
     }
 }
 
 // --- SessionStore: immutable session lifecycle manager ---
 
-/** Thin wrapper around a Session that guarantees immutability. */
 export class SessionStore {
     private current: Session;
+    private sessionDir: string;
     private directory: string;
 
     constructor(initial: Session, directory: string = process.cwd()) {
         this.current = initial;
         this.directory = directory;
+        this.sessionDir = sessionDirPath(initial.id, directory);
     }
 
     /** Returns a deep snapshot of the current session (safe to read, not to mutate). */
@@ -230,6 +285,7 @@ export class SessionStore {
     async reset(): Promise<Session> {
         const newSession = await resetSession(this.directory);
         this.current = newSession;
+        this.sessionDir = sessionDirPath(newSession.id, this.directory);
         return newSession;
     }
 
@@ -248,5 +304,15 @@ export class SessionStore {
             messages: [...remote.messages, ...localOnly],
             updatedAt: new Date().toISOString(),
         };
+    }
+
+    /** Resolve the file path for the session's context.md. */
+    contextFilePath(): string {
+        return path.join(this.sessionDir, 'context.md');
+    }
+
+    /** Resolve the path for the compacted tool outputs directory. */
+    compactedToolOutputsDirPath(): string {
+        return path.join(this.sessionDir, 'compacted_tool_outputs');
     }
 }

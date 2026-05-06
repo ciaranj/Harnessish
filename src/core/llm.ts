@@ -76,7 +76,6 @@ export async function makeCallToLLM(
 
         const payload = buildLLMPayload(messagesRef.current, toolsToOpenAITools(tools));
         const body = JSON.stringify(payload);
-
         const chatUrl = new URL('/v1/chat/completions', appConfig.getString('LLAMACPP_URL', 'http://localhost:8080/'));
         const res = await fetch(String(chatUrl), {
             method: 'POST',
@@ -178,8 +177,8 @@ export async function makeCallToLLM(
         store.setStats({ contextSize: currentStats.contextSize });
         await store.persist();
 
-        if (compactionStrategy.shouldTrigger(messagesRef.current, currentStats)) {
-            const result = await compactionStrategy.doCompaction(messagesRef.current, currentStats);
+        if (compactionStrategy.shouldTrigger(store)) {
+            const result = await compactionStrategy.doCompaction(store);
             updateMessages(() => result.messages);
             if (result.stats) {
                 currentStats = { ...currentStats, ...result.stats };

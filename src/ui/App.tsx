@@ -244,8 +244,8 @@ export const App = ({ makeCallToLLM, store, guardrails }: AppProps) => {
         }
 
         if (value === '/compact') {
-            const preCompactMessageLength = messagesRef.current.length;
-            const compacted = await compactionStrategy.doCompaction(messagesRef.current, stats);
+            const preCompactMessageLength = store.getMessages().length;
+            const compacted = await compactionStrategy.doCompaction(store);
             updateMessages(() => compacted.messages);
             let msg = `Compacted: ${preCompactMessageLength} → ${compacted.messages.length} messages`;
             if (compacted.contextMdPath) {

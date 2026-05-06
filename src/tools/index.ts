@@ -7,6 +7,7 @@ import { replaceContent } from './filesystem/replaceContent.js';
 import { getFileTree } from './filesystem/getFileTree.js';
 import { getGitDiff } from './system/getGitDiff.js';
 import { runPython } from './system/runPython.js';
+import { retrieveToolOutput } from './system/retrieveToolOutput.js';
 import { findFile } from './filesystem/findFile.js';
 import { searchInFiles } from './filesystem/searchInFiles.js';
 import { searchWeb } from './web/searchWeb.js';
@@ -19,6 +20,7 @@ export const tools = [
   getFileTree,
   getGitDiff,
   runPython,
+  retrieveToolOutput,
   findFile,
   searchInFiles,
   searchWeb,
@@ -27,4 +29,4 @@ export const tools = [
 
 export const toolsByName = Object.fromEntries(tools.map(t => [t.name, t])) as Record<string, typeof tools[number]>;
 
-export { readFiles, writeToFile, replaceContent, getFileTree, getGitDiff, runPython, findFile, searchInFiles, searchWeb, fetchUrl };
+export { readFiles, writeToFile, replaceContent, getFileTree, getGitDiff, runPython, retrieveToolOutput, findFile, searchInFiles, searchWeb, fetchUrl };
