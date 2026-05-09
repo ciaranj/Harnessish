@@ -5,6 +5,7 @@ import { SessionStore } from './session.js';
 import { CompactionStrategy, NoOpCompactionStrategy } from './compaction.js';
 import { buildLLMPayload } from '../utils.js';
 import { AppConfig } from './config/index.js';
+import { getLoggerInstance } from './log.js';
 
 const appConfig = AppConfig.getInstance();
 import { toolsByName, toolsToOpenAITools } from '../tools/index.js';
@@ -77,14 +78,51 @@ export async function makeCallToLLM(
         const payload = buildLLMPayload(messagesRef.current, toolsToOpenAITools(tools));
         const body = JSON.stringify(payload);
         const chatUrl = new URL('/v1/chat/completions', appConfig.getString('LLAMACPP_URL', 'http://localhost:8080/'));
-        const res = await fetch(String(chatUrl), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: body,
-            signal
+        const fetchUrl = String(chatUrl);
+        const logger = getLoggerInstance(process.cwd());
+
+        // Create a timeout promise — default 10m if no signal is provided
+        const timeoutMs = appConfig.getInt('LLM_TIMEOUT_MS') || 600_000;
+        let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+        let timedOut = false;
+        const timeoutPromise = new Promise((_, reject) => {
+            timeoutHandle = setTimeout(() => {
+                timedOut = true;
+                reject(new Error(`LLM request timeout after ${timeoutMs}ms`));
+            }, timeoutMs);
         });
 
-        if (res.status !== 200) throw new Error(`LLM error: ${res.status}`);
+        let res: Response;
+        try {
+            const fetchPromise = fetch(fetchUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: body,
+                signal
+            });
+            res = await Promise.race([fetchPromise, timeoutPromise]) as Response;
+        } catch (e) {
+            const duration = Date.now() - startTime;
+            if (timedOut || String(e).includes('timeout')) {
+                logger.error({ durationMs: duration, url: fetchUrl }, `LLM call timeout after ${duration}ms`);
+            } else {
+                logger.error({ url: fetchUrl, error: String(e) }, `LLM network error`);
+            }
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+            throw e;
+        }
+
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+
+        if (res.status !== 200) {
+            const duration = Date.now() - startTime;
+            let responseBody = '';
+            try {
+                responseBody = await res.text();
+            } catch { /* ignore */ }
+            logger.error({ status: res.status, statusText: res.statusText, body: responseBody, durationMs: duration, url: fetchUrl }, `LLM API error: ${res.status}`);
+            throw new Error(`LLM error: ${res.status}`);
+        }
 
         let buffer = "";
         const decoder = new StringDecoder('utf8');
@@ -107,12 +145,12 @@ export async function makeCallToLLM(
                     const data = line.startsWith('data: ') ? line.slice(6) : line;
                     if (data === '[DONE]') break;
 
-                    const payload = JSON.parse(data);
-                    if( payload.timings && payload.timings.prompt_n !== undefined ) {
-                        currentStats = { ...currentStats, contextSize: payload.timings.prompt_n + payload.timings.cache_n, cachedContextSize: payload.timings.cache_n };
+                    const streamPayload = JSON.parse(data);
+                    if( streamPayload.timings && streamPayload.timings.prompt_n !== undefined ) {
+                        currentStats = { ...currentStats, contextSize: streamPayload.timings.prompt_n + streamPayload.timings.cache_n, cachedContextSize: streamPayload.timings.cache_n };
                         setStats(currentStats);
                     }
-                    const delta = payload.choices[0].delta;
+                    const delta = streamPayload.choices[0].delta;
 
                     tokenCount++;
                     const elapsedSeconds = (Date.now() - startTime) / 1000;
@@ -150,7 +188,7 @@ export async function makeCallToLLM(
                         });
                     }
 
-                    if (payload.choices[0].finish_reason === 'tool_calls') {
+                    if (streamPayload.choices[0].finish_reason === 'tool_calls') {
                         updateMessages(msgs => {
                             const last = msgs[msgs.length - 1];
                             return [...msgs.slice(0, -1), { ...last, tool_calls: toolCalls }];
