@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { readFiles } from './readFiles.js';
-import { writeFile, unlink } from 'node:fs/promises';
+import { writeFile, unlink, stat } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 describe('readFiles', () => {
     const testFiles: string[] = [];
@@ -266,5 +269,158 @@ describe('readFiles', () => {
     it('renderCallText should handle empty paths array', () => {
         const text = readFiles.renderCallText({ paths: [] });
         expect(text).toBe('Reading ');
+    });
+
+    // --- Truncation / 20KB limit tests ---
+
+    it('should read a small file within the 20KB limit without truncation', async () => {
+        const tmpDir = await mkdtemp(path.join(tmpdir(), 'readfiles-test-'));
+        const smallFile = path.join(tmpDir, 'small.txt');
+        const content = 'x'.repeat(100);
+        await writeFile(smallFile, content);
+        testFiles.push(smallFile);
+
+        const result = await readFiles.execute({ paths: [{ path: smallFile }] });
+
+        expect(result).toHaveLength(1);
+        expect(result[0].success).toBe(true);
+        expect(result[0].truncated).toBe(false);
+        expect(result[0].unreadBytes).toBe(0);
+        expect(Buffer.byteLength(result[0].content ?? '', 'utf-8')).toBe(Buffer.byteLength(content, 'utf-8'));
+    });
+
+    it('should truncate a single file that exceeds the 20KB limit', async () => {
+        const tmpDir = await mkdtemp(path.join(tmpdir(), 'readfiles-test-'));
+        const largeFile = path.join(tmpDir, 'large.txt');
+        const content = 'x'.repeat(25 * 1024); // 25KB
+        await writeFile(largeFile, content);
+        testFiles.push(largeFile);
+
+        const result = await readFiles.execute({ paths: [{ path: largeFile }] });
+
+        expect(result).toHaveLength(1);
+        expect(result[0].success).toBe(true);
+        expect(result[0].truncated).toBe(true);
+        expect(result[0].unreadBytes).toBe(5 * 1024); // 25KB - 20KB read
+        expect(Buffer.byteLength(result[0].content ?? '', 'utf-8')).toBe(20 * 1024);
+    });
+
+    it('should mark all subsequent files as truncated once limit is reached', async () => {
+        const tmpDir = await mkdtemp(path.join(tmpdir(), 'readfiles-test-'));
+        const file1 = path.join(tmpDir, 'file1.txt');
+        const file2 = path.join(tmpDir, 'file2.txt');
+        const file3 = path.join(tmpDir, 'file3.txt');
+
+        // file1 fits within limit
+        await writeFile(file1, 'x'.repeat(1024));
+        testFiles.push(file1, file2, file3);
+
+        // file2 and file3 are large
+        await writeFile(file2, 'y'.repeat(30 * 1024));
+        await writeFile(file3, 'z'.repeat(30 * 1024));
+
+        const result = await readFiles.execute({ paths: [{ path: file1 }, { path: file2 }, { path: file3 }] });
+
+        expect(result).toHaveLength(3);
+
+        // file1: within limit, no truncation
+        expect(result[0].success).toBe(true);
+        expect(result[0].truncated).toBe(false);
+        expect(result[0].unreadBytes).toBe(0);
+
+        // file2: triggers truncation
+        expect(result[1].success).toBe(true);
+        expect(result[1].truncated).toBe(true);
+        expect(result[1].unreadBytes).toBeGreaterThan(0);
+
+        // file3: subsequent, no content, full file size reported as unread
+        expect(result[2].success).toBe(true);
+        expect(result[2].truncated).toBe(true);
+        expect(result[2].content).toBeUndefined();
+        expect(result[2].unreadBytes).toBe(30 * 1024);
+    });
+
+    it('should mark files within the limit as not truncated', async () => {
+        const tmpDir = await mkdtemp(path.join(tmpdir(), 'readfiles-test-'));
+        const fileA = path.join(tmpDir, 'fileA.txt');
+        const fileB = path.join(tmpDir, 'fileB.txt');
+
+        await writeFile(fileA, 'A'.repeat(5 * 1024));
+        await writeFile(fileB, 'B'.repeat(5 * 1024));
+        testFiles.push(fileA, fileB);
+
+        const result = await readFiles.execute({ paths: [{ path: fileA }, { path: fileB }] });
+
+        expect(result[0].success).toBe(true);
+        expect(result[0].truncated).toBe(false);
+        expect(result[0].unreadBytes).toBe(0);
+
+        expect(result[1].success).toBe(true);
+        expect(result[1].truncated).toBe(false);
+        expect(result[1].unreadBytes).toBe(0);
+    });
+
+    it('should handle line-range reads with truncation', async () => {
+        const tmpDir = await mkdtemp(path.join(tmpdir(), 'readfiles-test-'));
+        const file = path.join(tmpDir, 'range.txt');
+        // Create a file that's ~15KB
+        const content = 'x'.repeat(15 * 1024);
+        await writeFile(file, content);
+        testFiles.push(file);
+
+        const result = await readFiles.execute({ paths: [{ path: file, start: 1, end: 1000 }] });
+
+        expect(result).toHaveLength(1);
+        expect(result[0].success).toBe(true);
+        // 1000 lines of ~15 bytes each ≈ 15KB, should fit within 20KB
+        expect(result[0].truncated).toBe(false);
+    });
+
+    it('should report correct total bytes when under the limit', async () => {
+        const tmpDir = await mkdtemp(path.join(tmpdir(), 'readfiles-test-'));
+        const file1 = path.join(tmpDir, 'file1.txt');
+        const file2 = path.join(tmpDir, 'file2.txt');
+
+        await writeFile(file1, 'A'.repeat(5 * 1024));
+        await writeFile(file2, 'B'.repeat(3 * 1024));
+        testFiles.push(file1, file2);
+
+        const result = await readFiles.execute({ paths: [{ path: file1 }, { path: file2 }] });
+
+        // Both files fit within limit — verify full content returned
+        expect(Buffer.byteLength(result[0].content ?? '', 'utf-8')).toBe(5 * 1024);
+        expect(Buffer.byteLength(result[1].content ?? '', 'utf-8')).toBe(3 * 1024);
+    });
+
+    it('should report accurate unreadBytes for truncated files', async () => {
+        const tmpDir = await mkdtemp(path.join(tmpdir(), 'readfiles-test-'));
+        const largeFile = path.join(tmpDir, 'large.txt');
+        const content = 'x'.repeat(30 * 1024);
+        await writeFile(largeFile, content);
+        testFiles.push(largeFile);
+
+        const result = await readFiles.execute({ paths: [{ path: largeFile }] });
+
+        const expectedUnread = 30 * 1024 - 20 * 1024;
+        expect(result[0].unreadBytes).toBe(expectedUnread);
+    });
+
+    it('should report file size for files read after limit is reached', async () => {
+        const tmpDir = await mkdtemp(path.join(tmpdir(), 'readfiles-test-'));
+        const smallFile = path.join(tmpDir, 'small.txt');
+        const largeFile = path.join(tmpDir, 'large.txt');
+
+        await writeFile(smallFile, 'A'.repeat(1024));
+        await writeFile(largeFile, 'B'.repeat(25 * 1024));
+        testFiles.push(smallFile, largeFile);
+
+        const result = await readFiles.execute({ paths: [{ path: smallFile }, { path: largeFile }] });
+
+        // smallFile consumes 1KB, leaving 19KB for largeFile.
+        // largeFile is 25KB, so 19KB read + 6KB unread.
+        expect(result[0].truncated).toBe(false);
+        expect(result[1].truncated).toBe(true);
+        expect(result[1].unreadBytes).toBe(6 * 1024); // 25KB - 19KB read
+        expect(Buffer.byteLength(result[1].content ?? '', 'utf-8')).toBe(19 * 1024);
     });
 });
