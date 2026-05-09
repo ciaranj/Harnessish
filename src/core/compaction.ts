@@ -20,8 +20,7 @@ export interface CompactionConfig {
 }
 
 export interface CompactionResult {
-    messages: Message[];
-    stats?: Partial<Stats>;
+    /** Path to the directory where externalized tool outputs were written. */
     contextMdPath?: string;
 }
 
@@ -35,8 +34,8 @@ export class NoOpCompactionStrategy implements CompactionStrategy {
         return false;
     }
 
-    async doCompaction(store: SessionStore): Promise<CompactionResult> {
-        return { messages: store.getMessages() };
+    async doCompaction(_store: SessionStore): Promise<CompactionResult> {
+        return {};
     }
 }
 
@@ -63,7 +62,7 @@ export class RunningMemoryStrategy implements CompactionStrategy {
     async doCompaction(store: SessionStore): Promise<CompactionResult> {
         const messages = store.getMessages();
         if (messages.length <= this.config.recentTurns * 2) {
-            return { messages };
+            return {};
         }
 
         const outputsDir = store.compactedToolOutputsDirPath();
@@ -122,6 +121,9 @@ export class RunningMemoryStrategy implements CompactionStrategy {
         // Combine: compressed older + recent uncompressed (full fidelity)
         const newMessages = [...compressed, ...recentMessages];
 
-        return { messages: newMessages, contextMdPath: outputsDir };
+        // Mutate the store directly — the store notifies its subscribers
+        store.updateMessages(() => newMessages);
+
+        return { contextMdPath: outputsDir };
     }
 }

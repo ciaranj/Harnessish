@@ -1,8 +1,8 @@
 import React from 'react';
 import { StringDecoder } from 'node:string_decoder';
-import { Message, Stats } from './types.js';
+import { Stats } from './types.js';
 import { SessionStore } from './session.js';
-import { CompactionStrategy, NoOpCompactionStrategy } from './compaction.js';
+import { CompactionStrategy } from './compaction.js';
 import { buildLLMPayload } from '../utils.js';
 import { AppConfig } from './config/index.js';
 import { getLoggerInstance } from './log.js';
@@ -44,8 +44,6 @@ export async function dispatchTool(
 
 export async function makeCallToLLM(
     message: string | undefined,
-    updateMessages: (updateFn: (msgs: Message[]) => Message[]) => void,
-    messagesRef: React.MutableRefObject<Message[]>,
     tools: any[],
     setStats: React.Dispatch<React.SetStateAction<Stats>>,
     store: SessionStore,
@@ -59,7 +57,7 @@ export async function makeCallToLLM(
     while (loopCount < maxLoops) {
         loopCount++;
 
-        if (message) updateMessages(msgs => [...msgs, { role: 'user', content: message }]);
+        if (message) store.updateMessages(msgs => [...msgs, { role: 'user', content: message }]);
         message = undefined;
 
         let currentStats: Stats = { tokens: 0, tps: 0, status: 'sending', contextSize: 0, cachedContextSize: 0 };
@@ -71,11 +69,11 @@ export async function makeCallToLLM(
         const startTime = Date.now();
         let tokenCount = 0;
 
-        // Messages are kept in sync via App's updateMessages (which calls store.updateMessages).
+        // Messages are updated via store.updateMessages during streaming.
         // Just track stats here.
         store.setStats({ contextSize: currentStats.contextSize });
 
-        const payload = buildLLMPayload(messagesRef.current, toolsToOpenAITools(tools));
+        const payload = buildLLMPayload(store.getMessages(), toolsToOpenAITools(tools));
         const body = JSON.stringify(payload);
         const chatUrl = new URL('/v1/chat/completions', appConfig.getString('LLAMACPP_URL', 'http://localhost:8080/'));
         const fetchUrl = String(chatUrl);
@@ -160,7 +158,7 @@ export async function makeCallToLLM(
                         currentStats = { ...currentStats, tokens: tokenCount, tps: 0, status: 'thinking' as const };
                         setStats(currentStats);
                         const token = delta.reasoning_content;
-                        updateMessages(msgs => {
+                        store.updateMessages(msgs => {
                             const last = msgs[msgs.length - 1];
                             if (last && last.role === 'assistant') return [...msgs.slice(0, -1), { ...last, reasoning_content: (last.reasoning_content || '') + token }];
                             return [...msgs, { role: 'assistant', content: '', reasoning_content: token }];
@@ -181,7 +179,7 @@ export async function makeCallToLLM(
                         setStats(currentStats);
                         const token = delta.content;
                         response += token;
-                        updateMessages(msgs => {
+                        store.updateMessages(msgs => {
                             const last = msgs[msgs.length - 1];
                             if (last && last.role === 'assistant') return [...msgs.slice(0, -1), { ...last, content: last.content + token }];
                             return [...msgs, { role: 'assistant', content: token }];
@@ -189,7 +187,7 @@ export async function makeCallToLLM(
                     }
 
                     if (streamPayload.choices[0].finish_reason === 'tool_calls') {
-                        updateMessages(msgs => {
+                        store.updateMessages(msgs => {
                             const last = msgs[msgs.length - 1];
                             return [...msgs.slice(0, -1), { ...last, tool_calls: toolCalls }];
                         });
@@ -200,7 +198,7 @@ export async function makeCallToLLM(
                         for (const tc of toolCalls) {
                             const args = JSON.parse(tc.function.arguments);
                             const result = await dispatchTool(tc.function.name, args, guardrails);
-                            updateMessages(msgs => [...msgs, { role: 'tool', tool_call_id: tc.id, content: String(result) }]);
+                            store.updateMessages(msgs => [...msgs, { role: 'tool', tool_call_id: tc.id, content: String(result) }]);
                         }
                         didToolCall = true;
                     }
@@ -216,11 +214,7 @@ export async function makeCallToLLM(
         await store.persist();
 
         if (compactionStrategy.shouldTrigger(store)) {
-            const result = await compactionStrategy.doCompaction(store);
-            updateMessages(() => result.messages);
-            if (result.stats) {
-                currentStats = { ...currentStats, ...result.stats };
-            }
+            await compactionStrategy.doCompaction(store);
             store.setStats({ contextSize: currentStats.contextSize });
             await store.persist();
         }

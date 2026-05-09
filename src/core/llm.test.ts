@@ -44,13 +44,15 @@ describe('NoOpCompactionStrategy', () => {
                 { role: 'user', content: 'second' }
             ];
 
-            const result = await strategy.doCompaction(makeStore(messages));
-            expect(result.messages).toEqual(messages);
+            const store = makeStore(messages);
+            await strategy.doCompaction(store);
+            expect(store.getMessages()).toEqual(messages);
         });
 
         it('should not modify empty message list', async () => {
-            const result = await strategy.doCompaction(makeStore([]));
-            expect(result.messages).toEqual([]);
+            const store = makeStore([]);
+            await strategy.doCompaction(store);
+            expect(store.getMessages()).toEqual([]);
         });
 
         it('should handle messages with all fields', async () => {
@@ -68,8 +70,9 @@ describe('NoOpCompactionStrategy', () => {
                 }
             ];
 
-            const result = await strategy.doCompaction(makeStore(messages));
-            expect(result.messages).toEqual(messages);
+            const store = makeStore(messages);
+            await strategy.doCompaction(store);
+            expect(store.getMessages()).toEqual(messages);
         });
     });
 });

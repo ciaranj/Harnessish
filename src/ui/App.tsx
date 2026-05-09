@@ -112,8 +112,6 @@ function getRenderLines(messages: Message[], width: number): RenderLine[] {
 interface AppProps {
     makeCallToLLM: (
         message: string | undefined,
-        updateMessages: (updateFn: (msgs: Message[]) => Message[]) => void,
-        messagesRef: React.MutableRefObject<Message[]>,
         tools: any[],
         setStats: React.Dispatch<React.SetStateAction<Stats>>,
         store: SessionStore,
@@ -127,7 +125,6 @@ interface AppProps {
 
 export const App = ({ makeCallToLLM, store, guardrails }: AppProps) => {
     const initialMessages = store.getMessages();
-    const messagesRef = useRef<Message[]>(initialMessages);
     const [messages, setMessages] = useState<Message[]>(initialMessages);
     const [input, setInput] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
@@ -143,11 +140,15 @@ export const App = ({ makeCallToLLM, store, guardrails }: AppProps) => {
     const compactionStrategy = new RunningMemoryStrategy();
 
     const updateMessages = useCallback((updateFn: (msgs: Message[]) => Message[]) => {
-        const next = updateFn([...messagesRef.current]);
-        messagesRef.current = next;
-        store.updateMessages(() => next);
+        const next = store.updateMessages(updateFn);
         setMessages(next);
         return next;
+    }, [store]);
+
+    // Subscribe to store changes — when the store updates, sync React state
+    useEffect(() => {
+        const unsub = store.subscribe(() => setMessages(store.getMessages()));
+        return unsub;
     }, [store]);
 
     const persistSession = useCallback(async () => {
@@ -235,8 +236,7 @@ export const App = ({ makeCallToLLM, store, guardrails }: AppProps) => {
 
         if (value === '/reset') {
             await store.reset();
-            messagesRef.current = [];
-            setMessages([]);
+            setMessages(store.getMessages());
             setIsProcessing(false);
             setStats({ tokens: 0, tps: 0, status: 'idle', contextSize: 0, cachedContextSize: 0 });
             setInput('');
@@ -245,11 +245,11 @@ export const App = ({ makeCallToLLM, store, guardrails }: AppProps) => {
 
         if (value === '/compact') {
             const preCompactMessageLength = store.getMessages().length;
-            const compacted = await compactionStrategy.doCompaction(store);
-            updateMessages(() => compacted.messages);
-            let msg = `Compacted: ${preCompactMessageLength} → ${compacted.messages.length} messages`;
-            if (compacted.contextMdPath) {
-                msg += ` | wrote ${compacted.contextMdPath}`;
+            const result = await compactionStrategy.doCompaction(store);
+            const postCompactMessageLength = store.getMessages().length;
+            let msg = `Compacted: ${preCompactMessageLength} → ${postCompactMessageLength} messages`;
+            if (result.contextMdPath) {
+                msg += ` | wrote ${result.contextMdPath}`;
             }
             setNotification(msg);
             await persistSession();
@@ -265,7 +265,7 @@ export const App = ({ makeCallToLLM, store, guardrails }: AppProps) => {
                 const path = (await import('node:path')).default;
                 const os = await import('node:os');
                 const filePath = path.join(os.tmpdir(), filename);
-                const data = JSON.stringify(messagesRef.current, null, 2);
+                const data = JSON.stringify(store.getMessages(), null, 2);
                 fs.default.writeFileSync(filePath, data);
                 setNotification(`Context dumped to: ${filePath}`);
             } catch (err) {
@@ -281,8 +281,7 @@ export const App = ({ makeCallToLLM, store, guardrails }: AppProps) => {
 
         try {
             const currentTools = tools.length > 0 ? [...tools] : [];
-            await makeCallToLLM(value, updateMessages, messagesRef, currentTools, setStats, store, compactionStrategy, guardrails, abortControllerRef.current.signal);
-            await persistSession();
+            await makeCallToLLM(value, currentTools, setStats, store, compactionStrategy, guardrails, abortControllerRef.current.signal);
         } catch (e) {
             if (e instanceof Error && e.message === 'Aborted') setNotification("Turn abandoned.");
             else console.log("Error:", e);

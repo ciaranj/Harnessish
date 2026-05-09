@@ -228,10 +228,13 @@ export async function trySaveSession(session: Session, directory: string = proce
 
 // --- SessionStore: immutable session lifecycle manager ---
 
+export type Listener = () => void;
+
 export class SessionStore {
     private current: Session;
     private sessionDir: string;
     private directory: string;
+    private listeners: Set<Listener> = new Set();
 
     constructor(initial: Session, directory: string = process.cwd()) {
         this.current = initial;
@@ -250,12 +253,15 @@ export class SessionStore {
     }
 
     /**
-     * Update messages immutably. `updater` receives the current message list
-     * and must return a new array (or the same if unchanged).
+     * Update messages immutably. `updater` receives a copy of the current
+     * message list and must return the new message list.
+     * Returns the updated message array.
      */
-    updateMessages(updater: (msgs: Message[]) => Message[]): void {
+    updateMessages(updater: (msgs: Message[]) => Message[]): Message[] {
         const next = updater([...this.current.messages]);
         this.current = { ...this.current, messages: next, updatedAt: new Date().toISOString() };
+        this.notifyListeners();
+        return next;
     }
 
     /** Update stats immutably. Only updates fields that are non-undefined in `partial`. */
@@ -271,6 +277,7 @@ export class SessionStore {
             stats: { ...this.current.stats, ...defined } as SessionStats,
             updatedAt: new Date().toISOString(),
         };
+        this.notifyListeners();
     }
 
     /** Persist the current session to disk. */
@@ -286,6 +293,7 @@ export class SessionStore {
         const newSession = await resetSession(this.directory);
         this.current = newSession;
         this.sessionDir = sessionDirPath(newSession.id, this.directory);
+        this.notifyListeners();
         return newSession;
     }
 
@@ -304,6 +312,7 @@ export class SessionStore {
             messages: [...remote.messages, ...localOnly],
             updatedAt: new Date().toISOString(),
         };
+        this.notifyListeners();
     }
 
     /** Resolve the file path for the session's context.md. */
@@ -314,5 +323,23 @@ export class SessionStore {
     /** Resolve the path for the compacted tool outputs directory. */
     compactedToolOutputsDirPath(): string {
         return path.join(this.sessionDir, 'compacted_tool_outputs');
+    }
+
+    // --- Subscriber system ---
+
+    /**
+     * Register a listener that is called whenever the store's state changes.
+     * Returns an unsubscribe function.
+     */
+    subscribe(listener: Listener): () => void {
+        this.listeners.add(listener);
+        return () => this.listeners.delete(listener);
+    }
+
+    /** Notify all registered listeners. */
+    private notifyListeners(): void {
+        for (const listener of this.listeners) {
+            listener();
+        }
     }
 }

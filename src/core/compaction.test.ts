@@ -50,8 +50,8 @@ describe('NoOpCompactionStrategy', () => {
             makeMsg('user', 'Hello'),
             makeMsg('assistant', 'Hi there'),
         ]);
-        const result = await strategy.doCompaction(store);
-        expect(result.messages).toEqual([
+        await strategy.doCompaction(store);
+        expect(store.getMessages()).toEqual([
             makeMsg('system', 'You are helpful'),
             makeMsg('user', 'Hello'),
             makeMsg('assistant', 'Hi there'),
@@ -92,9 +92,9 @@ describe('RunningMemoryStrategy', () => {
         messages.push(makeMsg('assistant', 'Recent answer', 'Recent deep reasoning'));
 
         const store = makeStoreWithMessages(messages, 'test-session-1');
-        const result = await strategy.doCompaction(store);
+        await strategy.doCompaction(store);
 
-        const lastMsg = result.messages[result.messages.length - 1];
+        const lastMsg = store.getMessages()[store.getMessages().length - 1];
         expect(lastMsg?.role).toBe('assistant');
         expect(lastMsg?.content).toBe('Recent answer');
         expect(lastMsg?.reasoning_content).toBe('Recent deep reasoning');
@@ -112,9 +112,9 @@ describe('RunningMemoryStrategy', () => {
         messages.push(makeMsg('assistant', 'Recent answer', 'Recent deep reasoning'));
 
         const store = makeStoreWithMessages(messages);
-        const result = await strategy.doCompaction(store);
+        await strategy.doCompaction(store);
 
-        const olderAssistants = result.messages.filter(
+        const olderAssistants = store.getMessages().filter(
             (m) => m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Old answer'),
         );
         expect(olderAssistants.length).toBeGreaterThanOrEqual(6);
@@ -149,12 +149,12 @@ describe('RunningMemoryStrategy', () => {
             const result = await strategy.doCompaction(store);
 
             // Large tool output replaced with reference, role='tool' preserved
-            const refMsg = result.messages.find((m) => m.role === 'tool' && typeof m.content === 'string' && m.content.includes('Externalized to session context'));
+            const refMsg = store.getMessages().find((m) => m.role === 'tool' && typeof m.content === 'string' && m.content.includes('Externalized to session context'));
             expect(refMsg).toBeDefined();
             expect(refMsg?.tool_call_id).toBe('tool-call-abc');
 
             // Small tool output unchanged
-            const smallMsg = result.messages.find((m) => m.content === 'small');
+            const smallMsg = store.getMessages().find((m) => m.content === 'small');
             expect(smallMsg).toBeDefined();
             expect(smallMsg?.role).toBe('tool');
 
@@ -181,9 +181,9 @@ describe('RunningMemoryStrategy', () => {
         ];
 
         const store = makeStoreWithMessages(messages);
-        const result = await strategy.doCompaction(store);
+        await strategy.doCompaction(store);
 
-        const refMsg = result.messages.find(m => m.role === 'tool' && m.tool_call_id === 'tc-123');
+        const refMsg = store.getMessages().find(m => m.role === 'tool' && m.tool_call_id === 'tc-123');
         expect(refMsg).toBeDefined();
         expect(refMsg?.content).toContain('retrieve_tool_output');
     });
@@ -192,8 +192,8 @@ describe('RunningMemoryStrategy', () => {
         const strategy = new RunningMemoryStrategy({ recentTurns: 6, maxContextSize: 102400 });
         const messages = [makeMsg('user', 'hi'), makeMsg('assistant', 'hello')];
         const store = makeStoreWithMessages(messages);
-        const result = await strategy.doCompaction(store);
-        expect(result.messages).toEqual(messages);
+        await strategy.doCompaction(store);
+        expect(store.getMessages()).toEqual(messages);
     });
 
     it('doCompaction preserves user messages in older turns', async () => {
@@ -208,9 +208,9 @@ describe('RunningMemoryStrategy', () => {
         ];
 
         const store = makeStoreWithMessages(messages);
-        const result = await strategy.doCompaction(store);
+        await strategy.doCompaction(store);
 
-        const userMessages = result.messages.filter((m) => m.role === 'user');
+        const userMessages = store.getMessages().filter((m) => m.role === 'user');
         expect(userMessages).toHaveLength(3);
         expect(userMessages[0].content).toBe('First question');
         expect(userMessages[1].content).toBe('Second question');
