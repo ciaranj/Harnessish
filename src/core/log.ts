@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { AppConfig } from './config/index.js';
 
 const LOGS_DIR = '.h/logs';
-const LOG_FILE = 'harnessish.log';
+const LOG_FILE = 'harry.log';
 
 function resolveLogDir(cwd: string): string {
     return path.join(cwd, LOGS_DIR);

@@ -140,5 +140,5 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# Harnessish config
+# Harry config
 .h/

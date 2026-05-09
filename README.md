@@ -1,11 +1,11 @@
-# Harnessish
+# Harry
 
 > [!CAUTION]
 > **DO NOT USE THIS HARNESS IN PRODUCTION, OR ANYWHERE YOU CARE ABOUT YOUR DATA.** This project is for experimental purposes only and contains no safety protections. The author takes no responsibility or liability for any adverse consequences resulting from its use.
 
 ## Purpose
 
-**Harnessish** is an experimental AI harness designed for me to explore and understand tool-calling patterns in modern AI frameworks and protocols (such as the Model Context Protocol). It serves as a personal sandbox for testing how LLMs interact with local tools and environments in a controlled, yet unshielded, manner. A fundamental desire of this little project is to see how far we can go with Open models and Open associated tools (e.g. LLAMA-CPP and SearXNG) in a homelab, with just 16GB of VRAM, can go to bootstrap itself up. The initial commits were hand crafted, but as soon as the agent loop was in place the tool was used to build itself with Gemma4 running on, with only the occasional bit of help from Anthropic's Sonnet when Gemma4 got too stuck in loops, early doors.
+**Harry** (Harry-the-harness!) is an experimental AI harness project, for me to explore and understand tool-calling patterns in modern AI frameworks and protocols (such as the Model Context Protocol). It serves as a personal sandbox for testing how LLMs interact with local tools and environments in a controlled, yet unshielded, manner. A fundamental desire of this little project is to see how far we can go with Open models and Open associated tools (e.g. LLAMA-CPP and SearXNG) in a homelab, with just 16GB of VRAM, can go to bootstrap itself up. The initial commits were hand crafted, but as soon as the agent loop was in place the tool was used to build itself with Gemma4 running on, with only the occasional bit of help from Anthropic's Sonnet when Gemma4 got too stuck in loops, early doors.
 
 It is currently configured to work with **[llama-cpp](https://github.com/ggml-org/llama.cpp)** for local model execution and web search is provided through access to a [searxng](https://github.com/searxng/searxng) instance.
 
@@ -22,8 +22,8 @@ It is currently configured to work with **[llama-cpp](https://github.com/ggml-or
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/ciaranj/Harnessish.git
-   cd Harnessish
+   git clone https://github.com/ciaranj/harry.git
+   cd harry
    ```
 
 2. Install dependencies:

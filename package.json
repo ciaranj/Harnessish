@@ -1,10 +1,10 @@
 {
-  "name": "harnessish",
+  "name": "harry",
   "version": "1.0.0",
   "description": "A ropey AI harness to get my head around some of the tool calling in 'proper' approaches",
   "main": "build/index.js",
   "bin": {
-    "harnessish": "build/index.js"
+    "harry": "build/index.js"
   },
   "type": "module",
   "scripts": {
@@ -16,15 +16,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ciaranj/Harnessish.git"
+    "url": "git+https://github.com/ciaranj/Harry.git"
   },
   "keywords": [],
   "author": "",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/ciaranj/Harnessish/issues"
+    "url": "https://github.com/ciaranj/Harry/issues"
   },
-  "homepage": "https://github.com/ciaranj/Harnessish#readme",
+  "homepage": "https://github.com/ciaranj/Harry#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/pino": "^7.0.4",

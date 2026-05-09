@@ -339,7 +339,7 @@ export const App = ({ makeCallToLLM, store, guardrails }: AppProps) => {
                 <Box marginBottom={1} borderStyle="double" borderColor="red">
                     <Text color="red" bold>
                         {stats.status === 'idle'
-                            ? 'Are you sure you want to leave Harnessish? (y/N)'
+                            ? 'Are you sure you want to leave Harry? (y/N)'
                             : 'Are you sure you want to cancel the current turn? (y/N)'}
                     </Text>
                 </Box>
