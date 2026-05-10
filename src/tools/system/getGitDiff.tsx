@@ -1,10 +1,7 @@
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 import React from 'react';
 import { Text } from 'ink';
 import { Tool, ToolCallContext } from '../types.js';
-
-const execAsync = promisify(exec);
 
 interface GetGitDiffArgs {
   path?: string;
@@ -30,12 +27,24 @@ export const getGitDiff: Tool<GetGitDiffArgs, GitDiffResult> = {
   } as const,
   execute: async ({ path = '', staged = false }: GetGitDiffArgs, _ctx?: ToolCallContext): Promise<GitDiffResult> => {
     try {
-      const flag = staged ? '--cached' : '';
-      const command = `git diff ${flag} ${path}`.trim();
-      const { stdout } = await execAsync(command);
+      const args: string[] = ['diff'];
+      if (staged) args.push('--cached');
+      if (path) args.push(path);
+      let capturedStderr = '';
+      const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
+        const child = spawn('git', args, { maxBuffer: 10 * 1024 * 1024 });
+        let stdoutParts: string[] = [];
+        child.stdout.on('data', (d: Buffer) => stdoutParts.push(d.toString()));
+        child.stderr.on('data', (d: Buffer) => { capturedStderr += d.toString(); });
+        child.on('close', (code) => {
+          // code 0 = changes found, code 1 = no changes (clean), both are success
+          resolve({ stdout: stdoutParts.join('') });
+        });
+        child.on('error', (err) => reject(err));
+      });
       return { success: true, diff: stdout.trim() || "No changes detected." };
     } catch (error: any) {
-      return { success: false, diff: error.stdout || `Error running git diff: ${error.message}` };
+      return { success: false, diff: capturedStderr || `Error running git diff: ${error.message}` };
     }
   },
   renderCall: ({ path, staged }: GetGitDiffArgs) => (

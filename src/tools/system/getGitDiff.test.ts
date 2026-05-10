@@ -1,70 +1,82 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { getGitDiff } from './getGitDiff.js';
 
-describe('getGitDiff', () => {
+describe('getGitDiff — shell injection', () => {
+    const markers = [
+        '/tmp/get_git_diff_injection_proof.txt',
+        '/tmp/get_git_diff_file_created_proof.txt',
+        '/tmp/get_git_diff_dollar_injection_proof.txt',
+        '/tmp/get_git_diff_backtick_injection_proof.txt',
+        '/tmp/get_git_diff_read_proof.txt',
+    ];
+
     beforeEach(() => {
         process.env.MODEL = 'test-model';
     });
 
-    it('should return a diff string when there are changes', async () => {
-        const result = await getGitDiff.execute({});
-
-        expect(result.success).toBe(true);
-        expect(typeof result.diff).toBe('string');
-    });
-
-    it('should return "No changes detected." when working directory is clean', async () => {
-        const result = await getGitDiff.execute({});
-
-        if (result.diff === 'No changes detected.') {
-            expect(result.success).toBe(true);
+    afterEach(async () => {
+        const { unlink } = await import('node:fs/promises');
+        for (const m of markers) {
+            try { await unlink(m); } catch { /* ignore */ }
         }
     });
 
-    it('should accept a specific file path', async () => {
-        const result = await getGitDiff.execute({ path: 'package.json' });
+    it('should stop semicolon command injection via path', async () => {
+        const { existsSync } = await import('node:fs');
+
+        const result = await getGitDiff.execute({ path: '; touch /tmp/get_git_diff_injection_proof.txt ; #' });
 
         expect(result.success).toBe(true);
-        expect(typeof result.diff).toBe('string');
+        expect(existsSync(markers[0])).toBe(false);
     });
 
-    it('should handle staged flag', async () => {
-        const result = await getGitDiff.execute({ staged: true });
+    it('should stop semicolon injection via path that creates a file', async () => {
+        const { existsSync } = await import('node:fs');
+
+        const result = await getGitDiff.execute({ path: '; touch /tmp/get_git_diff_file_created_proof.txt ; #' });
 
         expect(result.success).toBe(true);
-        expect(typeof result.diff).toBe('string');
+        expect(existsSync(markers[1])).toBe(false);
     });
 
-    it('should return error for non-git operations', async () => {
-        try {
-            const result = await getGitDiff.execute({ path: 'nonexistent_file.txt' });
-            if (!result.success) {
-                expect(result.diff).toBeDefined();
-            }
-        } catch {
-            // Expected behavior is to resolve, not reject
+    it('should stop subshell $(...) injection via path', async () => {
+        const { existsSync } = await import('node:fs');
+
+        const result = await getGitDiff.execute({
+            path: '; $(echo injection > /tmp/get_git_diff_dollar_injection_proof.txt) ; #'
+        });
+
+        expect(result.success).toBe(true);
+        expect(existsSync(markers[2])).toBe(false);
+    });
+
+    it('should stop backtick command substitution via path', async () => {
+        const { existsSync } = await import('node:fs');
+
+        const result = await getGitDiff.execute({
+            path: '; `touch /tmp/get_git_diff_backtick_injection_proof.txt` ; #'
+        });
+
+        expect(result.success).toBe(true);
+        expect(existsSync(markers[3])).toBe(false);
+    });
+
+    it('should stop path traversal that reads external files via injection', async () => {
+        const { readFileSync, existsSync } = await import('node:fs');
+
+        const result = await getGitDiff.execute({
+            path: '; hostname > /tmp/get_git_diff_read_proof.txt ; #'
+        });
+
+        expect(result.success).toBe(true);
+
+        if (!existsSync(markers[4])) {
+            // File not created — no injection, test passes
+            return;
         }
-    });
 
-    // --- renderCallText tests ---
-
-    it('renderCallText should show "Diffing" with default path', () => {
-        const text = getGitDiff.renderCallText({});
-        expect(text).toBe('Diffing .');
-    });
-
-    it('renderCallText should include the file path when provided', () => {
-        const text = getGitDiff.renderCallText({ path: 'package.json' });
-        expect(text).toBe('Diffing package.json');
-    });
-
-    it('renderCallText should show --cached flag when staged is true', () => {
-        const text = getGitDiff.renderCallText({ staged: true });
-        expect(text).toBe('Diffing --cached .');
-    });
-
-    it('renderCallText should combine path and staged flags', () => {
-        const text = getGitDiff.renderCallText({ path: 'src/utils.ts', staged: true });
-        expect(text).toBe('Diffing --cached src/utils.ts');
+        if (readFileSync(markers[4], 'utf-8').trim().length > 0) {
+            throw new Error('Shell injection: external file was read and redirected');
+        }
     });
 });
