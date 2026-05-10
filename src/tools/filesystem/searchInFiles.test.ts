@@ -144,6 +144,67 @@ describe('searchInFiles', () => {
         expect(text).toBe('Searching for "" in ./src');
     });
 
+    // --- Shell injection proof tests ---
+    // All marker files go in /tmp/ so nothing in the workspace is touched.
+
+    it('should stop $() command substitution in pattern', async () => {
+        const marker = '/tmp/search_injection_proof_1.txt';
+        // Ensure the marker does not exist before the test
+        const { unlink } = await import('node:fs/promises');
+        try { await unlink(marker); } catch { /* ignore */ }
+
+        // The pattern "$(touch /tmp/search_injection_proof_1.txt)" will be injected
+        // into the grep command as: grep ... "$(touch /tmp/search_injection_proof_1.txt)" .
+        // If $() is not escaped, the touch command executes.
+        await writeFile('grep_inj_a.txt', 'hello', 'utf-8');
+        const result = await searchInFiles.execute({ pattern: '$(touch /tmp/search_injection_proof_1.txt)', path: 'grep_inj_a.txt' });
+
+        expect(result.success).toBe(true);
+        // The marker file proves $() was interpreted by the shell
+        const { existsSync } = await import('node:fs');
+        expect(existsSync(marker)).toBe(false);
+
+        // Cleanup
+        try { await unlink(marker); } catch { /* ignore */ }
+        try { await unlink('grep_inj_a.txt'); } catch { /* ignore */ }
+    });
+
+    it('should stop backtick command substitution in pattern', async () => {
+        const marker = '/tmp/search_injection_proof_2.txt';
+        const { unlink } = await import('node:fs/promises');
+        try { await unlink(marker); } catch { /* ignore */ }
+
+        // Backtick substitution: `touch /tmp/search_injection_proof_2.txt`
+        await writeFile('grep_inj_b.txt', 'hello', 'utf-8');
+        const result = await searchInFiles.execute({ pattern: '`touch /tmp/search_injection_proof_2.txt`', path: 'grep_inj_b.txt' });
+
+        expect(result.success).toBe(true);
+        const { existsSync } = await import('node:fs');
+        expect(existsSync(marker)).toBe(false);
+
+        try { await unlink(marker); } catch { /* ignore */ }
+        try { await unlink('grep_inj_b.txt'); } catch { /* ignore */ }
+    });
+
+    it('should stop unquoted path injection via semicolon', async () => {
+        const marker = '/tmp/search_injection_proof_3.txt';
+        const { unlink } = await import('node:fs/promises');
+        try { await unlink(marker); } catch { /* ignore */ }
+
+        // The path is passed literally to grep via spawn (no shell interpretation).
+        // grep will look for a file named "; touch /tmp/search_injection_proof_3.txt ;"
+        // which doesn't exist, so it returns exit code 2. The key assertion is that
+        // the marker file was NOT created (proving no shell injection occurred).
+        await writeFile('grep_inj_c.txt', 'hello', 'utf-8');
+        await searchInFiles.execute({ pattern: 'hello', path: '; touch /tmp/search_injection_proof_3.txt ;' });
+
+        const { existsSync } = await import('node:fs');
+        expect(existsSync(marker)).toBe(false);
+
+        try { await unlink(marker); } catch { /* ignore */ }
+        try { await unlink('grep_inj_c.txt'); } catch { /* ignore */ }
+    });
+
     afterEach(async () => {
         const { unlink } = await import('node:fs/promises');
         const files = [
