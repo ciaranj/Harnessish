@@ -3,6 +3,7 @@ import { Text, Box, useApp, useInput, useStdout } from 'ink';
 import TextInput from 'ink-text-input';
 import { Message, Stats } from '../core/types.js';
 import { SessionStore } from '../core/session.js';
+import type pino from 'pino';
 import { CompactionStrategy, RunningMemoryStrategy } from '../core/compaction.js';
 import { tools as defaultTools, toolsByName } from '../tools/index.js';
 import type { GuardrailConfigManager } from '../core/config/index.js';
@@ -117,13 +118,15 @@ interface AppProps {
         store: SessionStore,
         compactionStrategy: CompactionStrategy,
         guardrails: GuardrailConfigManager,
+        sessionLogger: pino.Logger,
         signal?: AbortSignal
     ) => Promise<void>;
     store: SessionStore;
+    sessionLogger: pino.Logger;
     guardrails: GuardrailConfigManager;
 }
 
-export const App = ({ makeCallToLLM, store, guardrails }: AppProps) => {
+export const App = ({ makeCallToLLM, store, sessionLogger, guardrails }: AppProps) => {
     const initialMessages = store.getMessages();
     const [messages, setMessages] = useState<Message[]>(initialMessages);
     const [input, setInput] = useState('');
@@ -281,7 +284,7 @@ export const App = ({ makeCallToLLM, store, guardrails }: AppProps) => {
 
         try {
             const currentTools = tools.length > 0 ? [...tools] : [];
-            await makeCallToLLM(value, currentTools, setStats, store, compactionStrategy, guardrails, abortControllerRef.current.signal);
+            await makeCallToLLM(value, currentTools, setStats, store, compactionStrategy, guardrails, sessionLogger, abortControllerRef.current.signal);
         } catch (e) {
             if (e instanceof Error && e.message === 'Aborted') setNotification("Turn abandoned.");
             else console.log("Error:", e);

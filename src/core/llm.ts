@@ -5,11 +5,12 @@ import { SessionStore } from './session.js';
 import { CompactionStrategy } from './compaction.js';
 import { buildLLMPayload } from '../utils.js';
 import { AppConfig } from './config/index.js';
-import { getLoggerInstance } from './log.js';
+
 
 const appConfig = AppConfig.getInstance();
 import { toolsByName, toolsToOpenAITools } from '../tools/index.js';
 import type { GuardrailConfigManager } from '../core/config/index.js';
+import type pino from 'pino';
 
 // ---------------------------------------------------------------------------
 // MCP client — lazily initialized, properly typed
@@ -174,7 +175,7 @@ function setToolCalls(lastMsg: Message, toolCalls: ToolCallAccumulator[]): Messa
     return { ...lastMsg, tool_calls: toolCalls as Message['tool_calls'] };
 }
 
-function logStats(logger: ReturnType<typeof getLoggerInstance>, startTime: number, label: string, stats: Stats): void {
+function logStats(logger: pino.Logger, startTime: number, label: string, stats: Stats): void {
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     logger.debug({ duration: `${duration}s`, tps: stats.tps, label }, `LLM round-trip: ${label}`);
 }
@@ -195,11 +196,12 @@ export async function makeCallToLLM(
     store: SessionStore,
     compactionStrategy: CompactionStrategy,
     guardrails: GuardrailConfigManager,
+    sessionLogger: pino.Logger,
     signal?: AbortSignal,
     options?: MakeCallToLLMOptions
 ) {
     const maxLoops = options?.maxLoops ?? 100;
-    const logger = getLoggerInstance(process.cwd());
+    const logger = sessionLogger;
 
     let loopCount = 0;
 

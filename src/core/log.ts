@@ -1,4 +1,4 @@
-import pino from 'pino';
+import pino, { stdTimeFunctions } from 'pino';
 import path from 'node:path';
 import fs from 'node:fs';
 import { AppConfig } from './config/index.js';
@@ -33,6 +33,7 @@ function getLogger(cwd: string): pino.Logger {
         _logger = pino(
             {
                 level: logLevel,
+                timestamp: stdTimeFunctions.isoTime,
                 formatters: {
                     level: (label) => ({ level: label.toUpperCase() }),
                 },
