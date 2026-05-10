@@ -26,13 +26,13 @@ export const getGitDiff: Tool<GetGitDiffArgs, GitDiffResult> = {
     }
   } as const,
   execute: async ({ path = '', staged = false }: GetGitDiffArgs, _ctx?: ToolCallContext): Promise<GitDiffResult> => {
+    let capturedStderr = '';
     try {
       const args: string[] = ['diff'];
       if (staged) args.push('--cached');
       if (path) args.push(path);
-      let capturedStderr = '';
       const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
-        const child = spawn('git', args, { maxBuffer: 10 * 1024 * 1024 });
+        const child = spawn('git', args);
         let stdoutParts: string[] = [];
         child.stdout.on('data', (d: Buffer) => stdoutParts.push(d.toString()));
         child.stderr.on('data', (d: Buffer) => { capturedStderr += d.toString(); });

@@ -9,7 +9,7 @@ import { Tool, ToolCallContext } from '../types.js';
  */
 const runGrep = (args: string[]): Promise<{ stdout: string; stderr: string; code: number | null }> =>
   new Promise((resolve, reject) => {
-    const child = spawn('grep', args, { maxBuffer: 10 * 1024 * 1024 });
+    const child = spawn('grep', args);
     const stdoutParts: string[] = [];
     const stderrParts: string[] = [];
 
