@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { Message, Stats } from './types.js';
+import { Message, createMessage, Stats } from './types.js';
 import { AppConfig } from './config/index.js';
 import { SessionStore } from './session.js';
 import { randomUUID } from 'node:crypto';
@@ -93,10 +93,10 @@ export class RunningMemoryStrategy implements CompactionStrategy {
             if (msg.role === 'user') {
                 compressed.push(msg);
             } else if (msg.role === 'assistant') {
-                const cleanMsg: Message = {
+                const cleanMsg = createMessage({
                     role: 'assistant',
                     content: msg.content ?? '',
-                };
+                });
                 if (cleanMsg.content) {
                     compressed.push(cleanMsg);
                 }
@@ -107,11 +107,11 @@ export class RunningMemoryStrategy implements CompactionStrategy {
                     const outputPath = path.join(outputsDir, `${outputId}.txt`);
                     fs.writeFileSync(outputPath, msg.content ?? '', 'utf-8');
 
-                    compressed.push({
+                    compressed.push(createMessage({
                         role: 'tool',
                         content: `[Externalized to session context → use retrieve_tool_output("${outputId}") to retrieve]`,
                         tool_call_id: msg.tool_call_id,
-                    });
+                    }));
                 } else {
                     compressed.push(msg);
                 }

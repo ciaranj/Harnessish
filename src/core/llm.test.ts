@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { NoOpCompactionStrategy } from './compaction.js';
-import { Message } from './types.js';
+import { Message, createMessage } from './types.js';
 import { SessionStore } from './session.js';
 import { createSession } from './session.js';
 
@@ -8,6 +8,17 @@ function makeStore(messages: Message[]): SessionStore {
     const session = createSession();
     session.messages = messages;
     return new SessionStore(session);
+}
+
+function messagesEqual(a: Message[], b: Message[]): boolean {
+    if (a.length !== b.length) return false;
+    return a.every((msg, i) =>
+        msg.role === b[i].role &&
+        msg.content === b[i].content &&
+        msg.reasoning_content === b[i].reasoning_content &&
+        msg.tool_call_id === b[i].tool_call_id &&
+        JSON.stringify(msg.tool_calls) === JSON.stringify(b[i].tool_calls)
+    );
 }
 
 describe('NoOpCompactionStrategy', () => {
@@ -20,8 +31,8 @@ describe('NoOpCompactionStrategy', () => {
     describe('shouldTrigger', () => {
         it('should always return false', () => {
             const messages: Message[] = [
-                { role: 'user', content: 'test' },
-                { role: 'assistant', content: 'response' }
+                createMessage({ role: 'user', content: 'test' }),
+                createMessage({ role: 'assistant', content: 'response' })
             ];
 
             const result = strategy.shouldTrigger(makeStore(messages));
@@ -29,7 +40,7 @@ describe('NoOpCompactionStrategy', () => {
         });
 
         it('should return false even with many messages', () => {
-            const messages: Message[] = Array(100).fill({ role: 'user', content: 'test' });
+            const messages: Message[] = Array(100).fill(null).map(() => createMessage({ role: 'user', content: 'test' }));
 
             const result = strategy.shouldTrigger(makeStore(messages));
             expect(result).toBe(false);
@@ -39,14 +50,14 @@ describe('NoOpCompactionStrategy', () => {
     describe('doCompaction', () => {
         it('should return messages unchanged', async () => {
             const messages: Message[] = [
-                { role: 'user', content: 'first' },
-                { role: 'assistant', content: 'reply' },
-                { role: 'user', content: 'second' }
+                createMessage({ role: 'user', content: 'first' }),
+                createMessage({ role: 'assistant', content: 'reply' }),
+                createMessage({ role: 'user', content: 'second' })
             ];
 
             const store = makeStore(messages);
             await strategy.doCompaction(store);
-            expect(store.getMessages()).toEqual(messages);
+            expect(messagesEqual(store.getMessages(), messages)).toBe(true);
         });
 
         it('should not modify empty message list', async () => {
@@ -57,22 +68,14 @@ describe('NoOpCompactionStrategy', () => {
 
         it('should handle messages with all fields', async () => {
             const messages: Message[] = [
-                {
-                    role: 'assistant',
-                    content: 'response',
-                    reasoning_content: 'reasoning',
-                    tool_calls: [{ id: '1', function: { name: 'test', arguments: '{}' } }]
-                },
-                {
-                    role: 'tool',
-                    tool_call_id: '1',
-                    content: 'tool result'
-                }
+                createMessage({ role: 'assistant', content: 'response', reasoning_content: 'reasoning' }),
+                createMessage({ role: 'tool', tool_call_id: '1', content: 'tool result' })
             ];
+            (messages[0] as Message & { tool_calls: any[] }).tool_calls = [{ id: '1', function: { name: 'test', arguments: '{}' } }];
 
             const store = makeStore(messages);
             await strategy.doCompaction(store);
-            expect(store.getMessages()).toEqual(messages);
+            expect(messagesEqual(store.getMessages(), messages)).toBe(true);
         });
     });
 });

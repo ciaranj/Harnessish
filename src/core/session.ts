@@ -302,10 +302,11 @@ export class SessionStore {
      * Merges the remote session's messages into this store, keeping ours as a suffix.
      */
     resolveConflict(remote: Session): void {
-        // Take remote messages (authoritative), then append any messages we had that aren't in remote
-        const remoteMsgIds = new Set(remote.messages.map((m, i) => `${m.role}-${i}`));
+        // Take remote messages (authoritative), then append any messages we had that aren't in remote.
+        // Uses stable UUIDs assigned at message creation time, not role+index which shift on edits.
+        const remoteMsgIds = new Set(remote.messages.map(m => m.id));
         const localOnly = this.current.messages.filter(
-            (m, i) => !remoteMsgIds.has(`${m.role}-${i}`)
+            m => !remoteMsgIds.has(m.id)
         );
         this.current = {
             ...remote,

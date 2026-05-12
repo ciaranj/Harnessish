@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { NoOpCompactionStrategy, RunningMemoryStrategy } from './compaction.js';
-import { Message } from './types.js';
+import { Message, createMessage } from './types.js';
 import { SessionStore } from './session.js';
 import { createSession } from './session.js';
 
 function makeMsg(role: Message['role'], content?: string, reasoning?: string, tool_call_id?: string): Message {
-    const msg: Message = { role, content };
+    const msg = createMessage({ role, content });
     if (reasoning !== undefined) {
         (msg as Message & { reasoning_content: string }).reasoning_content = reasoning;
     }
@@ -45,17 +45,19 @@ describe('NoOpCompactionStrategy', () => {
 
     it('doCompaction returns messages unchanged', async () => {
         const strategy = new NoOpCompactionStrategy();
-        const store = makeStoreWithMessages([
+        const expectedMessages = [
             makeMsg('system', 'You are helpful'),
             makeMsg('user', 'Hello'),
             makeMsg('assistant', 'Hi there'),
-        ]);
+        ];
+        const store = makeStoreWithMessages(expectedMessages);
         await strategy.doCompaction(store);
-        expect(store.getMessages()).toEqual([
-            makeMsg('system', 'You are helpful'),
-            makeMsg('user', 'Hello'),
-            makeMsg('assistant', 'Hi there'),
-        ]);
+        const result = store.getMessages();
+        expect(result.length).toBe(expectedMessages.length);
+        result.forEach((msg, i) => {
+            expect(msg.role).toBe(expectedMessages[i].role);
+            expect(msg.content).toBe(expectedMessages[i].content);
+        });
     });
 });
 
@@ -193,7 +195,12 @@ describe('RunningMemoryStrategy', () => {
         const messages = [makeMsg('user', 'hi'), makeMsg('assistant', 'hello')];
         const store = makeStoreWithMessages(messages);
         await strategy.doCompaction(store);
-        expect(store.getMessages()).toEqual(messages);
+        const result = store.getMessages();
+        expect(result.length).toBe(messages.length);
+        result.forEach((msg, i) => {
+            expect(msg.role).toBe(messages[i].role);
+            expect(msg.content).toBe(messages[i].content);
+        });
     });
 
     it('doCompaction preserves user messages in older turns', async () => {

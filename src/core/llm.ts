@@ -1,6 +1,6 @@
 import React from 'react';
 import { StringDecoder } from 'node:string_decoder';
-import { Stats, Message } from './types.js';
+import { Stats, Message, createMessage } from './types.js';
 import { SessionStore } from './session.js';
 import { CompactionStrategy } from './compaction.js';
 import { buildLLMPayload } from '../utils.js';
@@ -158,7 +158,7 @@ function updateLastAssistantMessage(
     if (last && last.role === 'assistant') {
         msgs[msgs.length - 1] = updater(last);
     } else {
-        msgs.push(updater({ role: 'assistant', content: '' } as Message));
+        msgs.push(updater(createMessage({ role: 'assistant', content: '' })));
     }
     return msgs;
 }
@@ -210,7 +210,7 @@ export async function makeCallToLLM(
 
         // --- Build payload ---
         if (message) {
-            store.updateMessages(msgs => [...msgs, { role: 'user', content: message }]);
+            store.updateMessages(msgs => [...msgs, createMessage({ role: 'user', content: message })]);
         }
         message = undefined;
 
@@ -348,10 +348,10 @@ export async function makeCallToLLM(
                     const args = JSON.parse(tc.function.arguments || '{}');
                     const result = await dispatchTool(tc.function.name || '', args, guardrails);
                     logger.debug({ tool: tc.function.name, tool_call_id: tc.id }, `Tool executed in ${(Date.now() - startTime).toFixed(0)}ms`);
-                    store.updateMessages(msgs => [...msgs, { role: 'tool', tool_call_id: tc.id, content: String(result) }]);
+                    store.updateMessages(msgs => [...msgs, createMessage({ role: 'tool', tool_call_id: tc.id, content: String(result) })]);
                 } catch (err) {
                     logger.error({ tool: tc.function.name, tool_call_id: tc.id, error: String(err) }, `Tool failed`);
-                    store.updateMessages(msgs => [...msgs, { role: 'tool', tool_call_id: tc.id, content: String(err) }]);
+                    store.updateMessages(msgs => [...msgs, createMessage({ role: 'tool', tool_call_id: tc.id, content: String(err) })]);
                 }
             }
             didToolCall = true;
