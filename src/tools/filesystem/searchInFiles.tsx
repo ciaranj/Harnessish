@@ -99,7 +99,7 @@ export const searchInFiles: Tool<SearchInFilesArgs, SearchInFilesResult> = {
   schema: {
     type: "object",
     properties: {
-      pattern: { type: "string", description: "The regex pattern or string to search for." },
+      pattern: { type: "string", description: "The regex pattern to search for." },
       path: { type: "string", description: "The directory or file to search in." }
     },
     required: ["pattern"]
@@ -110,8 +110,10 @@ export const searchInFiles: Tool<SearchInFilesArgs, SearchInFilesResult> = {
       const excludeArgs = excludedDirs.flatMap(dir => ['--exclude-dir', dir]);
 
       // Build the arguments array — passed directly to execvp, no shell interpretation.
+      // -I: skip binary files (prevents garbled output)
       const args = [
         '-rnE',
+        '-I',
         '--no-messages',
         ...excludeArgs,
         pattern,

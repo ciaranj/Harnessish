@@ -144,6 +144,51 @@ describe('searchInFiles', () => {
         expect(text).toBe('Searching for "" in ./src');
     });
 
+    // --- Binary file exclusion tests ---
+
+    it('should exclude binary files from search results (proves -I is working)', async () => {
+        // Create a binary file containing null bytes and the search pattern
+        const binaryPath = 'grep_test_binary.bin';
+        const binaryContent = Buffer.alloc(256, 0);
+        binaryContent.write('hello', 128); // embed 'hello' somewhere in the binary
+
+        await writeFile(binaryPath, binaryContent);
+
+        const result = await searchInFiles.execute({ pattern: 'hello', path: binaryPath });
+
+        expect(result.success).toBe(true);
+
+        // With -I, binary files should be excluded and produce no matches
+        expect(result.matches.length).toBe(0);
+
+        // Cleanup
+        const { unlink } = await import('node:fs/promises');
+        try { await unlink(binaryPath); } catch { /* ignore */ }
+    });
+
+    it('should not include garbled binary output in search results', async () => {
+        // Create a binary file with mixed null bytes and printable chars
+        const binaryPath = 'grep_test_garbled.bin';
+        const chunks: Buffer[] = [];
+        chunks.push(Buffer.from('start\x00\x00\x00'));
+        chunks.push(Buffer.from('hello\x01\x02\x03'));
+        chunks.push(Buffer.from('\x00\x00\x00end'));
+        const binaryContent = Buffer.concat(chunks);
+
+        await writeFile(binaryPath, binaryContent);
+
+        const result = await searchInFiles.execute({ pattern: 'hello', path: binaryPath });
+
+        expect(result.success).toBe(true);
+
+        // With -I, the binary file should be excluded entirely — zero output
+        expect(result.matches.length).toBe(0);
+
+        // Cleanup
+        const { unlink } = await import('node:fs/promises');
+        try { await unlink(binaryPath); } catch { /* ignore */ }
+    });
+
     // --- Shell injection proof tests ---
     // All marker files go in /tmp/ so nothing in the workspace is touched.
 
