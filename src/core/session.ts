@@ -249,7 +249,7 @@ export class SessionStore {
 
     /** Returns a shallow copy of messages — caller should not mutate in place. */
     getMessages(): Message[] {
-        return this.current.messages;
+         return [...this.current.messages];
     }
 
     /**
