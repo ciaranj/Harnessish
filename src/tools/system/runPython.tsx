@@ -26,13 +26,35 @@ export const runPython: Tool<RunPythonArgs, PythonResult> = {
   } as const,
   execute: async ({ code }: RunPythonArgs, _ctx?: ToolCallContext): Promise<PythonResult> => {
     return new Promise((resolve) => {
-      const proc = spawn('ipython', ['--no-banner', '--no-confirm-exit', '-c', code], { timeout: 60_000 });
+      const proc = spawn('ipython', ['--no-banner', '--no-confirm-exit', '-c', code]);
       let stdout = '', stderr = '';
-      proc.stdout.on('data', (d) => { stdout += d; });
+      const maxOutput = 1024 * 1024; // 1MB cap to prevent OOM
+      let timedOut = false;
+      const timeoutMs = 60_000;
+      let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+        timedOut = true;
+        proc.kill();
+      }, timeoutMs);
+
+      proc.on('close', () => { if (timer) clearTimeout(timer); });
+
+      proc.stdout.on('data', (d) => {
+        stdout += d.toString();
+        if (Buffer.byteLength(stdout) > maxOutput) {
+          stdout = stdout.slice(0, maxOutput) + '\n[OUTPUT TRUNCATED]';
+          proc.kill();
+        }
+      });
       proc.stderr.on('data', (d) => { stderr += d; });
+
       proc.on('close', (code) => {
-        if (code !== 0 && stderr) resolve({ success: false, output: stderr.trim() });
-        else resolve({ success: true, output: stdout.trim() || '(no output)' });
+        if (timedOut) {
+          resolve({ success: false, output: 'Python execution timed out (60s)' });
+        } else if (code !== 0 && stderr) {
+          resolve({ success: false, output: stderr.trim() });
+        } else {
+          resolve({ success: true, output: stdout.trim() || '(no output)' });
+        }
       });
       proc.on('error', (e) => resolve({ success: false, output: `Failed to launch ipython: ${e.message}` }));
     });
