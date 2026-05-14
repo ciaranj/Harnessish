@@ -10,7 +10,8 @@ import { AppConfig } from './config/index.js';
 const appConfig = AppConfig.getInstance();
 import { toolsByName, toolsToOpenAITools } from '../tools/index.js';
 import type { GuardrailConfigManager } from '../core/config/index.js';
-import type pino from 'pino';
+import pino from 'pino';
+import type { Logger } from 'pino';
 
 // ---------------------------------------------------------------------------
 // MCP client — lazily initialized, properly typed
@@ -63,11 +64,16 @@ interface SseEvent {
 
 /**
  * Parses a SSE stream and yields parsed events.
- * Handles partial lines across chunks via a buffer.
+ * Handles partial lines across chunks via a buffer, and accumulates
+ * incomplete JSON fragments that span multiple network chunks.
  */
-async function* parseSseStream(body: ReadableStream): AsyncIterable<SseEvent> {
+async function* parseSseStream(
+    body: ReadableStream,
+    logger: Logger
+): AsyncIterable<SseEvent> {
     const decoder = new StringDecoder('utf8');
     let buffer = "";
+    let partialJson = "";
 
     for await (const chunk of body) {
         buffer += decoder.write(chunk);
@@ -76,11 +82,27 @@ async function* parseSseStream(body: ReadableStream): AsyncIterable<SseEvent> {
 
         for (const line of lines) {
             if (!line.trim()) continue;
-            const data = line.startsWith('data: ') ? line.slice(6) : line;
+            const trimmed = line.trim();
+            const data = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed;
             if (data === '[DONE]') return;
 
-            const event = JSON.parse(data) as SseEvent;
-            yield event;
+            if (data.startsWith('{') || data.startsWith('[')) {
+                partialJson += data;
+                try {
+                    yield JSON.parse(partialJson) as SseEvent;
+                    partialJson = "";
+                } catch {
+                    // incomplete JSON fragment — accumulate more data.
+                    // Log for observability; track how often this actually occurs.
+                    const truncated = partialJson.length > 120 ? partialJson.slice(0, 120) + '…' : partialJson;
+                    logger.warn(
+                        { data: String(data), partial: truncated },
+                        'SSE partial JSON (cross-chunk fragment)'
+                    );
+                }
+            } else {
+                partialJson += data;
+            }
         }
     }
 }
@@ -261,7 +283,7 @@ export async function makeCallToLLM(
         let finishReason: string | undefined;
 
         try {
-            for await (const event of parseSseStream(res.body)) {
+            for await (const event of parseSseStream(res.body, logger)) {
                 if (signal?.aborted) throw new Error("Aborted");
 
                 const choice = event.choices?.[0];
