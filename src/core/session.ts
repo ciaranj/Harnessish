@@ -45,11 +45,17 @@ export function findActiveSessionId(cwd: string = process.cwd()): string | null 
         for (const entry of entries) {
             const sessionId = entry;
             const filePath = sessionFilePath(sessionId, cwd);
+
+            // TOCTOU note: between readdirSync/statSync/readFileSync and the
+            // subsequent loadSession/readSession calls, the file could be
+            // deleted or replaced. We accept this risk — the session directory
+            // is managed by this single process and is unlikely to be touched
+            // externally. The outer try/catch also handles ENOENT/EACCES
+            // gracefully, so the worst case is a silent skip.
             if (fs.existsSync(filePath)) {
                 const mtime = fs.statSync(filePath).mtimeMs;
                 if (mtime <= latestTime) continue;
 
-                // Check that the session has at least one message
                 const data = fs.readFileSync(filePath, 'utf-8');
                 const parsed = JSON.parse(data);
                 if (!parsed.messages || parsed.messages.length === 0) continue;
@@ -202,6 +208,11 @@ export async function trySaveSession(session: Session, directory: string = proce
     const tempPath = filePath + TEMP_SUFFIX;
 
     try {
+        // TOCTOU note: between the readFileSync above and the write in saveSession(),
+        // another process could theoretically write a different version and cause
+        // silent data loss. We accept this risk — in practice the session file is
+        // only written by this single process during its lifetime, so the window is
+        // extremely narrow and the likelihood of a conflicting write is negligible.
         const existingData = fs.readFileSync(filePath, 'utf-8');
         const existingSession = JSON.parse(existingData) as Session;
 
