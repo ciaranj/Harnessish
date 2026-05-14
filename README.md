@@ -1,4 +1,6 @@
-# Harry
+# Harry (The harness)
+
+![Harry](harry.png)
 
 > [!CAUTION]
 > **DO NOT USE THIS HARNESS IN PRODUCTION, OR ANYWHERE YOU CARE ABOUT YOUR DATA.** This project is for experimental purposes only and contains no safety protections. The author takes no responsibility or liability for any adverse consequences resulting from its use.
