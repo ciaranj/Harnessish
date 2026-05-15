@@ -38,12 +38,21 @@ export const findFile: Tool<FindFileArgs, FindFileResult> = {
       const patternRegex = globToRegex(pattern);
       const results: string[] = [];
 
-      const walk = async (currentDir: string) => {
+      const walk = async (currentDir: string, depth = 0) => {
+        if (depth > 20) return;
         try {
           const entries = await fs.readdir(currentDir, { withFileTypes: true });
           for (const entry of entries) {
             const fullPath = path.join(currentDir, entry.name);
-            if (entry.isDirectory()) await walk(fullPath);
+            if (entry.isDirectory()) {
+              if (entry.isSymbolicLink()) {
+                try {
+                  const target = await fs.realpath(fullPath);
+                  if (target === currentDir) continue; // self-referencing symlink loop
+                } catch { continue; } // unresolved symlink — skip
+              }
+              await walk(fullPath, depth + 1);
+            }
             else if (entry.isFile() && patternRegex.test(entry.name)) results.push(fullPath);
           }
         } catch (err: any) {
