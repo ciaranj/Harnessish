@@ -1,10 +1,13 @@
 import React from 'react';
 
 import type { GuardrailConfigManager } from '../core/config/index.js';
+import type { SessionStore } from '../core/session.js';
 
 export interface ToolCallContext {
   abortSignal?: AbortSignal;
   guardrails?: GuardrailConfigManager;
+  sessionStore?: SessionStore;
+  configStore?: GuardrailConfigManager;
 }
 
 export interface Tool<TArgs, TResult> {

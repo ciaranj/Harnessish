@@ -1,7 +1,6 @@
 import React from 'react';
 import { Text } from 'ink';
 import { Tool, ToolCallContext } from '../types.js';
-import { findActiveSessionId } from '../../core/session.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -14,14 +13,6 @@ type RetrieveResult = { success: boolean; content: string };
 
 function renderRetrieveCall(outputId: string, description?: string): string {
   return `Retrieving tool output: ${outputId}` + (description ? ` (${description})` : '');
-}
-
-function resolveCompactedToolOutputsPath(): string | null {
-  const activeId = findActiveSessionId();
-  if (!activeId) return null;
-
-  const outputsDir = path.join('.h', 'sessions', activeId, 'compacted_tool_outputs');
-  return fs.existsSync(outputsDir) ? outputsDir : null;
 }
 
 export const retrieveToolOutput: Tool<RetrieveToolOutputArgs, RetrieveResult> = {
@@ -41,11 +32,13 @@ export const retrieveToolOutput: Tool<RetrieveToolOutputArgs, RetrieveResult> = 
     },
     required: ['outputId']
   } as const,
-  execute: async ({ outputId, description }: RetrieveToolOutputArgs, _ctx?: ToolCallContext): Promise<RetrieveResult> => {
-    const outputsDir = resolveCompactedToolOutputsPath();
-
+  execute: async ({ outputId, description }: RetrieveToolOutputArgs, ctx?: ToolCallContext): Promise<RetrieveResult> => {
+    const outputsDir = ctx?.sessionStore?.compactedToolOutputsDirPath();
     if (!outputsDir) {
-      return { success: false, content: `Compacted tool outputs directory not found. No active session or outputs not accessible.` };
+      return { success: false, content: 'Compacted tool outputs directory not found. No active session.' };
+    }
+    if (!fs.existsSync(outputsDir)) {
+      return { success: false, content: 'Compacted tool outputs directory not found.' };
     }
 
     const outputPath = path.join(outputsDir, `${outputId}.txt`);

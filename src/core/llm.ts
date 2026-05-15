@@ -148,11 +148,11 @@ async function fetchWithTimeout(opts: LlmRequestOptions): Promise<Response> {
 export async function dispatchTool(
     name: string,
     args: Record<string, unknown>,
-    guardrails?: GuardrailConfigManager
+    ctx?: { guardrails?: GuardrailConfigManager; sessionStore?: SessionStore }
 ): Promise<string> {
     const tool = toolsByName[name];
     if (tool) {
-        const result = await tool.execute(args as never, { guardrails });
+        const result = await tool.execute(args as never, ctx);
         return typeof result === 'string' ? result : JSON.stringify(result, null, 2);
     }
     if (mcpClient) {
@@ -368,7 +368,7 @@ export async function makeCallToLLM(
             for (const tc of toolCallsAccum) {
                 try {
                     const args = JSON.parse(tc.function.arguments || '{}');
-                    const result = await dispatchTool(tc.function.name || '', args, guardrails);
+                    const result = await dispatchTool(tc.function.name || '', args, { guardrails, sessionStore: store });
                     logger.debug({ tool: tc.function.name, tool_call_id: tc.id }, `Tool executed in ${(Date.now() - startTime).toFixed(0)}ms`);
                     store.updateMessages(msgs => [...msgs, createMessage({ role: 'tool', tool_call_id: tc.id, content: String(result) })]);
                 } catch (err) {

@@ -21,7 +21,7 @@ const BACKUP_SUFFIX = '.bak';
 const TEMP_SUFFIX = '.tmp';
 
 /** Resolve the directory path for a session by ID. */
-function sessionDirPath(sessionId: string, cwd: string = process.cwd()): string {
+export function sessionDirPath(sessionId: string, cwd: string = process.cwd()): string {
     return path.join(cwd, SESSIONS_ROOT, sessionId);
 }
 
