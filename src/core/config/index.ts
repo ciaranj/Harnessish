@@ -147,10 +147,28 @@ export class ConfigStore {
     return current;
   }
 
+  /** Deep-merge `b` into `a`, preserving nested object keys from `a`. */
+  private _deepMerge(a: RawConfig, b: RawConfig): RawConfig {
+    const result = { ...a };
+    for (const key of Object.keys(b)) {
+      if (
+        typeof b[key] === 'object' && b[key] !== null &&
+        !Array.isArray(b[key]) &&
+        typeof result[key] === 'object' && result[key] !== null &&
+        !Array.isArray(result[key])
+      ) {
+        result[key] = this._deepMerge(result[key] as RawConfig, b[key] as RawConfig);
+      } else {
+        result[key] = b[key];
+      }
+    }
+    return result;
+  }
+
   private _merge(): RawConfig {
     const globalCfg = this.scopes.get('global') ?? {};
     const projectCfg = this.scopes.get('project') ?? {};
-    return { ...globalCfg, ...projectCfg, updatedAt: new Date().toISOString() };
+    return { ...this._deepMerge(globalCfg, projectCfg), updatedAt: new Date().toISOString() };
   }
 
   private _ensureDir(filePath: string): void {

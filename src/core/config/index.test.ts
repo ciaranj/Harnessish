@@ -108,6 +108,47 @@ describe('ConfigStore', () => {
     expect(merged.shared).toBe('project'); // project wins
   });
 
+  it('should deep-merge nested objects, preserving keys from global', () => {
+    setFile(io, globalPath, {
+      version: 1, updatedAt: 'now',
+      tools: { readFiles: true, writeToFile: true },
+      nested: { deep: { key: 'global' } },
+    });
+    setFile(io, projectPath, {
+      version: 1, updatedAt: 'now',
+      tools: { writeToFile: false },
+      nested: { deep: { other: true } },
+    });
+
+    const store = new ConfigStore({ resolver: resolver(), fileIO: io });
+    store.load();
+
+    const merged = store.get();
+    const tools = merged.tools as Record<string, unknown>;
+    expect(tools.readFiles).toBe(true);        // preserved from global
+    expect(tools.writeToFile).toBe(false);      // overridden by project
+    const deep = merged.nested?.deep as Record<string, unknown>;
+    expect(deep.key).toBe('global');            // preserved from global
+    expect(deep.other).toBe(true);              // added by project
+  });
+
+  it('should not deep-merge arrays — project array replaces global array', () => {
+    setFile(io, globalPath, {
+      version: 1, updatedAt: 'now',
+      arr: [1, 2, 3],
+    });
+    setFile(io, projectPath, {
+      version: 1, updatedAt: 'now',
+      arr: [4],
+    });
+
+    const store = new ConfigStore({ resolver: resolver(), fileIO: io });
+    store.load();
+
+    const merged = store.get();
+    expect(merged.arr).toEqual([4]);
+  });
+
   it('should handle missing scopes gracefully', () => {
     const store = new ConfigStore({ resolver: resolver(), fileIO: io });
     store.load();
