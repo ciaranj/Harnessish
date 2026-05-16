@@ -26,7 +26,6 @@ describe('getGitDiff — shell injection', () => {
 
         const result = await getGitDiff.execute({ path: '; touch /tmp/get_git_diff_injection_proof.txt ; #' });
 
-        expect(result.success).toBe(true);
         expect(existsSync(markers[0])).toBe(false);
     });
 
@@ -35,7 +34,6 @@ describe('getGitDiff — shell injection', () => {
 
         const result = await getGitDiff.execute({ path: '; touch /tmp/get_git_diff_file_created_proof.txt ; #' });
 
-        expect(result.success).toBe(true);
         expect(existsSync(markers[1])).toBe(false);
     });
 
@@ -46,7 +44,6 @@ describe('getGitDiff — shell injection', () => {
             path: '; $(echo injection > /tmp/get_git_diff_dollar_injection_proof.txt) ; #'
         });
 
-        expect(result.success).toBe(true);
         expect(existsSync(markers[2])).toBe(false);
     });
 
@@ -57,7 +54,6 @@ describe('getGitDiff — shell injection', () => {
             path: '; `touch /tmp/get_git_diff_backtick_injection_proof.txt` ; #'
         });
 
-        expect(result.success).toBe(true);
         expect(existsSync(markers[3])).toBe(false);
     });
 
@@ -68,15 +64,26 @@ describe('getGitDiff — shell injection', () => {
             path: '; hostname > /tmp/get_git_diff_read_proof.txt ; #'
         });
 
-        expect(result.success).toBe(true);
-
         if (!existsSync(markers[4])) {
-            // File not created — no injection, test passes
             return;
         }
 
         if (readFileSync(markers[4], 'utf-8').trim().length > 0) {
             throw new Error('Shell injection: external file was read and redirected');
         }
+    });
+});
+
+describe('getGitDiff — exit code handling', () => {
+    it('should return success:false for a non-existent file (exit code 128)', async () => {
+        const result = await getGitDiff.execute({ path: '/nonexistent/path/that/does/not/exist.txt' });
+        expect(result.success).toBe(false);
+        expect(result.diff.length).toBeGreaterThan(0);
+    });
+
+    it('should return success:true for a clean tracked file (exit code 1)', async () => {
+        const result = await getGitDiff.execute({ path: 'README.md' });
+        expect(result.success).toBe(true);
+        expect(typeof result.diff).toBe('string');
     });
 });
