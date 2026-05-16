@@ -197,8 +197,9 @@ function setToolCalls(lastMsg: Message, toolCalls: ToolCallAccumulator[]): Messa
     return { ...lastMsg, tool_calls: toolCalls as Message['tool_calls'] };
 }
 
-function logStats(logger: pino.Logger, startTime: number, label: string, stats: Stats): void {
-    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+function logStats(logger: pino.Logger, startTime: bigint, label: string, stats: Stats): void {
+    const ns = Number(process.hrtime.bigint() - startTime) / 1e9;
+    const duration = ns.toFixed(3);
     logger.debug({ duration: `${duration}s`, tps: stats.tps, label }, `LLM round-trip: ${label}`);
 }
 
@@ -236,7 +237,7 @@ export async function makeCallToLLM(
         }
         message = undefined;
 
-        const startTime = Date.now();
+        const startTime = process.hrtime.bigint();
         const tokenCount = { value: 0 };
         let didToolCall = false;
         const toolCallsAccum: ToolCallAccumulator[] = [];
@@ -261,16 +262,16 @@ export async function makeCallToLLM(
         try {
             res = await fetchWithTimeout({ fetchUrl, body, signal, timeoutMs });
         } catch (e) {
-            const duration = Date.now() - startTime;
-            logger.error({ durationMs: duration, url: fetchUrl }, `LLM call failed: ${String(e)}`);
+            const durationMs = Number(process.hrtime.bigint() - startTime) / 1e6;
+            logger.error({ durationMs, url: fetchUrl }, `LLM call failed: ${String(e)}`);
             throw e;
         }
 
         if (res.status !== 200) {
-            const duration = Date.now() - startTime;
+            const durationMs = Number(process.hrtime.bigint() - startTime) / 1e6;
             let responseBody = '';
             try { responseBody = await res.text(); } catch { /* ignore */ }
-            logger.error({ status: res.status, url: fetchUrl, durationMs: duration }, `LLM API error`);
+            logger.error({ status: res.status, url: fetchUrl, durationMs: durationMs }, `LLM API error`);
             throw new Error(`LLM error: ${res.status}`);
         }
 
@@ -303,7 +304,7 @@ export async function makeCallToLLM(
                 if (!delta) continue;
 
                 tokenCount.value++;
-                const elapsed = (Date.now() - startTime) / 1000;
+                const elapsed = Number(process.hrtime.bigint() - startTime) / 1e9;
                 const tps = elapsed > 0 ? tokenCount.value / elapsed : 0;
 
                 // --- Reasoning (per-token update for streaming display) ---
@@ -369,7 +370,7 @@ export async function makeCallToLLM(
                 try {
                     const args = JSON.parse(tc.function.arguments || '{}');
                     const result = await dispatchTool(tc.function.name || '', args, { guardrails, sessionStore: store });
-                    logger.debug({ tool: tc.function.name, tool_call_id: tc.id }, `Tool executed in ${(Date.now() - startTime).toFixed(0)}ms`);
+                    logger.debug({ tool: tc.function.name, tool_call_id: tc.id }, `Tool executed in ${Number(process.hrtime.bigint() - startTime) / 1e6}ms`);
                     store.updateMessages(msgs => [...msgs, createMessage({ role: 'tool', tool_call_id: tc.id, content: String(result) })]);
                 } catch (err) {
                     logger.error({ tool: tc.function.name, tool_call_id: tc.id, error: String(err) }, `Tool failed`);
