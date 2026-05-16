@@ -275,6 +275,12 @@ export class SessionStore {
         return next;
     }
 
+    /** Increment the session version. Called after structural changes like compaction. */
+    incrementVersion(): void {
+        this.current = { ...this.current, version: this.current.version + 1, updatedAt: new Date().toISOString() };
+        this.notifyListeners();
+    }
+
     /** Update stats immutably. Only updates fields that are non-undefined in `partial`. */
     setStats(partial: Partial<Session['stats']>): void {
         if (!partial || Object.keys(partial).length === 0) return;
