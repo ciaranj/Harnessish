@@ -306,7 +306,7 @@ export async function makeCallToLLM(
                 const elapsed = (Date.now() - startTime) / 1000;
                 const tps = elapsed > 0 ? tokenCount.value / elapsed : 0;
 
-                // --- Reasoning ---
+                // --- Reasoning (per-token update for streaming display) ---
                 if (delta.reasoning_content) {
                     currentStats.tokens = tokenCount.value;
                     currentStats.tps = 0;
@@ -316,7 +316,7 @@ export async function makeCallToLLM(
                     store.updateMessages(msgs => updateLastAssistantMessage(msgs, last => appendReasoning(last, delta.reasoning_content!)));
                 }
 
-                // --- Tool calls ---
+                // --- Tool calls (buffered — one update at the end) ---
                 if (delta.tool_calls) {
                     currentStats.tokens = tokenCount.value;
                     currentStats.tps = tps;
@@ -337,7 +337,7 @@ export async function makeCallToLLM(
                     }
                 }
 
-                // --- Content ---
+                // --- Content (per-token update for streaming display) ---
                 if (delta.content) {
                     currentStats.tokens = tokenCount.value;
                     currentStats.tps = tps;
