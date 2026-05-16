@@ -266,16 +266,26 @@ export class AppConfig {
       '.h', 'config.json'
     );
 
-    if (!fs.existsSync(globalPath)) {
-      // Seed global config from .env / .env.example defaults
-      const defaults = getDefaults();
-      const seedConfig: RawConfig = {
-        ...defaults,
-        version: 1,
-        updatedAt: new Date().toISOString(),
-      };
-      this.store.set(seedConfig, 'global');
-      this.store.save('global');
+    // Seed global config from .env / .env.example defaults.
+    // Use exclusive create ({ flag: 'wx' }) to avoid TOCTOU race:
+    // if the file already exists (created by another process),
+    // we silently skip — its content is already valid.
+    const defaults = getDefaults();
+    const seedConfig: RawConfig = {
+      ...defaults,
+      version: 1,
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      fs.writeFileSync(globalPath, JSON.stringify(seedConfig, null, 2), {
+        flag: 'wx',
+      });
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') {
+        throw err;
+      }
+      // File was created by another process — skip seeding.
     }
 
     // Load all scopes into memory (including the seeded global config)
