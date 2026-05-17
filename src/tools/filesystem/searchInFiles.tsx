@@ -39,8 +39,8 @@ const MAX_MATCHES_PER_FILE = 5;
 const MAX_TOTAL_OUTPUT_LINES = 30; // includes headers, blank lines, and match content
 const MAX_LINE_LENGTH = 200; // truncate individual match lines beyond this
 
-function parseGrepOutput(stdout: string): SearchInFilesResult {
-  if (!stdout.trim()) return { success: true, matches: [], truncated: false };
+function parseGrepOutput(stdout: string, stderrNote: string = ''): SearchInFilesResult {
+  if (!stdout.trim() && !stderrNote) return { success: true, matches: [], truncated: false };
 
   const rawLines = stdout.trim().split('\n');
   const totalMatches = rawLines.length;
@@ -66,6 +66,10 @@ function parseGrepOutput(stdout: string): SearchInFilesResult {
   // Summary header
   const summary = `Found ${totalMatches} matches across ${fileGroups.size} files.`;
   outputLines.push(summary);
+  if (stderrNote) {
+    outputLines.push(stderrNote);
+    totalOutputLines++;
+  }
   outputLines.push('');
   totalOutputLines += 2;
 
@@ -113,6 +117,7 @@ export const searchInFiles: Tool<SearchInFilesArgs, SearchInFilesResult> = {
 
       // Build the arguments array — passed directly to execvp, no shell interpretation.
       // -I: skip binary files (prevents garbled output)
+      // --no-messages: suppress permission errors to stderr (surfaced below)
       const args = [
         '-rnE',
         '-I',
@@ -124,15 +129,21 @@ export const searchInFiles: Tool<SearchInFilesArgs, SearchInFilesResult> = {
 
       const { stdout, stderr, code } = await runGrep(args);
 
+      // Surface stderr warnings (e.g., permission denied, broken symlinks)
+      // so the LLM knows when files/dirs were skipped.
+      const stderrNote = stderr.trim()
+        ? `\n[Note: ${stderr.trim()}]`
+        : '';
+
       if (code === 0) {
         // grep found matches — normal exit
-        return parseGrepOutput(stdout);
+        return parseGrepOutput(stdout, stderrNote);
       } else if (code === 1) {
         // exit code 1 means no matches found.
-        return { success: true, matches: [], truncated: false };
+        return { success: true, matches: stderrNote ? [stderrNote] : [], truncated: false };
       } else if (code === 2 && stdout.trim()) {
         // exit code 2 means grep found matches but also hit errors (e.g., missing dirs).
-        return parseGrepOutput(stdout);
+        return parseGrepOutput(stdout, stderrNote);
       } else {
         return { success: false, matches: [], truncated: false };
       }
