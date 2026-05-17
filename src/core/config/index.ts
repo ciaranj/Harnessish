@@ -211,17 +211,35 @@ export function createDefaultConfigStore(opts?: {
 function parseEnv(content: string): Record<string, string> {
   const result: Record<string, string> = {};
   for (const line of content.split('\n')) {
-    const trimmed = line.trim();
+    let trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
+
+    // Strip `export ` prefix (e.g. `export KEY=value` → `KEY=value`)
+    trimmed = trimmed.replace(/^export\s+/, '');
+    // Re-check after stripping export
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
     const eqIdx = trimmed.indexOf('=');
     if (eqIdx === -1) continue;
     const key = trimmed.slice(0, eqIdx).trim();
+    if (!key) continue;
+
     let value = trimmed.slice(eqIdx + 1).trim();
+
+    // Strip inline comments (# and everything after, outside quotes)
+    if (!value.startsWith('"') && !value.startsWith("'")) {
+      const commentIdx = value.indexOf('#');
+      if (commentIdx !== -1) {
+        value = value.slice(0, commentIdx).trim();
+      }
+    }
+
     // Remove surrounding quotes
     if ((value.startsWith('"') && value.endsWith('"')) ||
       (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     }
+
     result[key] = value;
   }
   return result;
