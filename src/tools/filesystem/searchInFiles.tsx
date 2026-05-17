@@ -48,10 +48,12 @@ function parseGrepOutput(stdout: string): SearchInFilesResult {
   // Group by file (grep format: "filepath:linenum:content")
   const fileGroups = new Map<string, string[]>();
   for (const line of rawLines) {
-    const firstColon = line.indexOf(':');
-    if (firstColon === -1) continue;
-    const filePath = line.substring(0, firstColon);
-    const rest = line.substring(firstColon + 1); // "linenum:content"
+    // grep format: filepath:linenum:content
+    // filepath may contain colons, so find the `:number:` linenum separator
+    const m = line.match(/:(\d+):/);
+    if (!m) continue;
+    const filePath = line.substring(0, m.index);
+    const rest = line.substring(m.index + m[0].length);
     if (!fileGroups.has(filePath)) fileGroups.set(filePath, []);
     fileGroups.get(filePath)!.push(rest);
   }

@@ -231,6 +231,33 @@ describe('searchInFiles', () => {
         try { await unlink('grep_inj_b.txt'); } catch { /* ignore */ }
     });
 
+    // --- Colons-in-filename parsing tests ---
+
+    it('should correctly parse filenames containing colons', async () => {
+        const colonFilePath = 'grep_test:colon.txt';
+        await writeFile(colonFilePath, 'hello world\nfoo bar', 'utf-8');
+
+        const result = await searchInFiles.execute({ pattern: 'hello', path: colonFilePath });
+
+        expect(result.success).toBe(true);
+        expect(result.matches.length).toBeGreaterThan(0);
+        // The filepath (with colon) should appear as a header
+        const hasCorrectHeader = result.matches.some(l => l.includes('grep_test:colon.txt'));
+        expect(hasCorrectHeader).toBe(true);
+    });
+
+    it('should correctly parse multiple colons in a filename', async () => {
+        const multiColonPath = 'grep_test:a:b.txt';
+        await writeFile(multiColonPath, 'test line\nanother line', 'utf-8');
+
+        const result = await searchInFiles.execute({ pattern: 'test', path: multiColonPath });
+
+        expect(result.success).toBe(true);
+        expect(result.matches.length).toBeGreaterThan(0);
+        const hasCorrectHeader = result.matches.some(l => l.includes('grep_test:a:b.txt'));
+        expect(hasCorrectHeader).toBe(true);
+    });
+
     it('should stop unquoted path injection via semicolon', async () => {
         const marker = '/tmp/search_injection_proof_3.txt';
         const { unlink } = await import('node:fs/promises');
@@ -255,7 +282,8 @@ describe('searchInFiles', () => {
         const files = [
             'grep_test.txt', 'grep_test2.txt', 'grep_test3.txt',
             'grep_test_many.txt', 'grep_test_group.txt', 'grep_test_cap.txt',
-            'grep_test_long.txt', 'grep_test_multi_a.txt', 'grep_test_multi_b.txt'
+            'grep_test_long.txt', 'grep_test_multi_a.txt', 'grep_test_multi_b.txt',
+            'grep_test:colon.txt', 'grep_test:a:b.txt'
         ];
         for (const file of files) {
             try { await unlink(file); } catch { /* ignore */ }
