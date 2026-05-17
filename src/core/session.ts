@@ -1,7 +1,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import process from 'node:process';
 import { Message } from './types.js';
+
+/** Generate a session ID as ISO timestamp + PID. */
+function generateSessionId(): string {
+    const now = new Date();
+    const y = now.getFullYear();
+    const mo = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const h = String(now.getHours()).padStart(2, '0');
+    const mi = String(now.getMinutes()).padStart(2, '0');
+    const s = String(now.getSeconds()).padStart(2, '0');
+    return `${y}-${mo}-${d}T${h}${mi}${s}-${process.pid}`;
+}
 
 export type SessionStats = {
     contextSize: number;
@@ -73,7 +85,7 @@ export function findActiveSessionId(cwd: string = process.cwd()): string | null 
 export function createSession(directory: string = process.cwd()): Session {
     const now = new Date().toISOString();
     return {
-        id: randomUUID(),
+        id: generateSessionId(),
         createdAt: now,
         updatedAt: now,
         version: 0,
