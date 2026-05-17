@@ -32,6 +32,16 @@ let mcpTransport: McpTransport | null = null;
 
 export async function connectToServer(url: string): Promise<boolean> {
     try {
+        // Clean up old connection before creating a new one
+        if (mcpTransport) {
+            try {
+                await mcpTransport.disconnect();
+            } catch {
+                // Best-effort — old connection is about to be replaced anyway
+            }
+            mcpClient = null;
+            mcpTransport = null;
+        }
         const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
         const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
         mcpClient = new Client({ name: "mcp-client-cli", version: "1.0.0" }) as unknown as McpClient;
