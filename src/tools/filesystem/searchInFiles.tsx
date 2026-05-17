@@ -39,7 +39,7 @@ const MAX_MATCHES_PER_FILE = 5;
 const MAX_TOTAL_OUTPUT_LINES = 30; // includes headers, blank lines, and match content
 const MAX_LINE_LENGTH = 200; // truncate individual match lines beyond this
 
-function parseGrepOutput(stdout: string, stderrNote: string = ''): SearchInFilesResult {
+export function parseGrepOutput(stdout: string, stderrNote: string = ''): SearchInFilesResult {
   if (!stdout.trim() && !stderrNote) return { success: true, matches: [], truncated: false };
 
   const rawLines = stdout.trim().split('\n');
@@ -51,7 +51,7 @@ function parseGrepOutput(stdout: string, stderrNote: string = ''): SearchInFiles
     // grep format: filepath:linenum:content
     // filepath may contain colons, so find the `:number:` linenum separator
     const m = line.match(/:(\d+):/);
-    if (!m) continue;
+    if (!m || m.index === undefined) continue;
     const filePath = line.substring(0, m.index);
     const rest = line.substring(m.index + m[0].length);
     if (!fileGroups.has(filePath)) fileGroups.set(filePath, []);

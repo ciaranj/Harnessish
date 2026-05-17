@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { searchInFiles } from './searchInFiles.js';
+import { searchInFiles, parseGrepOutput } from './searchInFiles.js';
 import { writeFile } from 'node:fs/promises';
 
 describe('searchInFiles', () => {
@@ -256,6 +256,25 @@ describe('searchInFiles', () => {
         expect(result.matches.length).toBeGreaterThan(0);
         const hasCorrectHeader = result.matches.some(l => l.includes('grep_test:a:b.txt'));
         expect(hasCorrectHeader).toBe(true);
+    });
+
+    // --- stderr note tests ---
+
+    it('should include stderr note when permission errors occur', () => {
+        const result = parseGrepOutput('file.txt:1:hello world', '\n[Note: Permission denied: /root/.cache]');
+        expect(result.matches.some(l => l.includes('Permission denied'))).toBe(true);
+        expect(result.matches.some(l => l.includes('/root/.cache'))).toBe(true);
+    });
+
+    it('should omit stderr note when stderr is empty', () => {
+        const result = parseGrepOutput('file.txt:1:hello world', '');
+        expect(result.matches.some(l => l.startsWith('[Note:'))).toBe(false);
+    });
+
+    it('should return matches even when stderr note is present with no stdout', () => {
+        const result = parseGrepOutput('', '[Note: Permission denied: /root/.cache]');
+        expect(result.success).toBe(true);
+        expect(result.matches.length).toBeGreaterThan(0);
     });
 
     it('should stop unquoted path injection via semicolon', async () => {
